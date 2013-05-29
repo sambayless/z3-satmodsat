@@ -107,7 +107,8 @@ namespace smt {
         proof_ref                      m_lemma_proof;
 
         literal_vector                 m_assumptions;
-
+        literal_vector                 m_axioms;
+        literal_vector                 m_relative;
     public:
         void setup() {
         }
@@ -161,6 +162,13 @@ namespace smt {
         void init_mk_proof();
         void mk_conflict_proof(b_justification conflict, literal not_l);
 
+        //Generate a justification for the assignment of l in terms of theory axioms/decisions
+        void mk_axiomatic_lemma(literal assigned, b_justification conflict=b_justification::mk_axiom());
+
+
+        void mk_relative_lemma( literal assigned, b_justification conflict,bool (*is_relative)(literal l, b_justification&, void *), void * data);
+
+
     protected:
         template<bool Set>
         void mark_enodes_in_trans(enode * n);
@@ -196,6 +204,12 @@ namespace smt {
         void process_antecedent_for_unsat_core(literal antecedent);
         void process_justification_for_unsat_core(justification * js);
         void mk_unsat_core(b_justification conflict, literal not_l);
+
+        void process_antecedent_axiomatic(literal antecedent);
+        void process_justification_axiomatic(justification * js);
+
+        void process_antecedent_relative(literal antecedent);
+        void process_justification_relative(justification * js);
 
         bool initialize_resolve(b_justification conflict, literal not_l, b_justification & js, literal & consequent);
         void finalize_resolve(b_justification conflict, literal not_l);
@@ -256,6 +270,22 @@ namespace smt {
         literal_vector::const_iterator end_unsat_core() const {
             return m_assumptions.end();
         }
+
+        literal_vector::const_iterator begin_axioms() const {
+               return m_axioms.begin();
+           }
+
+           literal_vector::const_iterator end_axioms() const {
+               return m_axioms.end();
+           }
+
+           literal_vector::const_iterator begin_relative() const {
+                    return m_relative.begin();
+                }
+
+                literal_vector::const_iterator end_relative() const {
+                    return m_relative.end();
+                }
     };
 
     inline void mark_literals(conflict_resolution & cr, unsigned sz, literal const * ls) {
@@ -273,6 +303,9 @@ namespace smt {
 
 
 };
+
+
+
 
 #endif /* _SMT_CONFLICT_RESOLUTION_H_ */
 

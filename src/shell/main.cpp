@@ -32,8 +32,9 @@ Revision History:
 #include"timeout.h"
 #include"z3_exception.h"
 #include"error_codes.h"
+#include"aig_frontend.h"
 
-typedef enum { IN_UNSPECIFIED, IN_SMTLIB, IN_SMTLIB_2, IN_DATALOG, IN_DIMACS, IN_Z3_LOG } input_kind;
+typedef enum { IN_UNSPECIFIED, IN_SMTLIB, IN_SMTLIB_2, IN_DATALOG, IN_DIMACS, IN_Z3_LOG,IN_AIG } input_kind;
 
 std::string         g_aux_input_file;
 char const *        g_input_file          = 0;
@@ -417,6 +418,8 @@ int main(int argc, char ** argv) {
                 }
                 else if (strcmp(ext, "smt") == 0) {
                     g_input_kind = IN_SMTLIB;
+                }else if (strcmp(ext, "aig") == 0) {
+                    g_input_kind = IN_AIG;
                 }
             }
 	}
@@ -436,6 +439,9 @@ int main(int argc, char ** argv) {
             break;
         case IN_Z3_LOG:
             replay_z3_log(g_input_file);
+            break;
+        case IN_AIG:
+        	read_aig(g_input_file, *g_front_end_params);
             break;
         default:
             UNREACHABLE();

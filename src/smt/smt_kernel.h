@@ -114,6 +114,8 @@ namespace smt {
         */
         void reset();
 
+        expr* export_expr(expr* e,kernel & child );
+
         /**
            \brief Return true if the set of asserted formulas is known to be inconsistent.
         */

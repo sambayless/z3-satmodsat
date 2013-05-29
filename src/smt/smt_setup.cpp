@@ -30,6 +30,7 @@ Revision History:
 #include"theory_dl.h"
 #include"theory_instgen.h"
 #include"theory_seq_empty.h"
+#include"theory_sat.h"
 
 namespace smt {
 
@@ -50,6 +51,8 @@ namespace smt {
         // }
         TRACE("setup", tout << "configuring logical context, logic: " << m_logic << "\n";);
         m_already_configured = true;
+
+        m_context.register_plugin(alloc(smt::theory_sat,m_manager.get_family_id("satmodsat"), &m_context ));
         switch (cm) {
         case CFG_BASIC: setup_unknown(); break;
         case CFG_LOGIC: setup_default(); break;
@@ -783,6 +786,10 @@ namespace smt {
             m_context.register_plugin(alloc(smt::theory_bv, m_manager, m_params, m_params));
             break;
         }
+    }
+
+    void setup::setup_sat_mod_sat(){
+    	m_context.register_plugin(alloc(smt::theory_sat,m_manager.get_family_id("satmodsat"), &m_context ));
     }
 
     void setup::setup_arrays() {

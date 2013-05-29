@@ -95,6 +95,7 @@ namespace smt {
         void setup_instgen();
         void setup_i_arith();
         void setup_mi_arith();
+        void setup_sat_mod_sat();
     public:
         setup(context & c, front_end_params & params);
         void mark_already_configured() { m_already_configured = true; }

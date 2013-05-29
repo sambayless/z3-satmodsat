@@ -31,6 +31,7 @@ Revision History:
 #include"ast_pp.h"
 #include"bv_decl_plugin.h"
 #include"array_decl_plugin.h"
+#include "sat_decl_plugin.h"
 #include"warning.h"
 #include"error_codes.h"
 #include"pattern_validation.h"
@@ -548,7 +549,7 @@ class smtparser : public parser {
             REGISTER_PLUGIN("arith",      alloc(arith_decl_plugin));
             REGISTER_PLUGIN("bv",         alloc(bv_decl_plugin));
             REGISTER_PLUGIN("array",      alloc(array_decl_plugin));
-            
+            REGISTER_PLUGIN("satmodsat",alloc(sat_decl_plugin));
         };
     };
 

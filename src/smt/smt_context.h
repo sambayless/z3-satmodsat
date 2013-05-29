@@ -50,7 +50,7 @@ Revision History:
 #include"instruction_count.h"
 #include"statistics.h"
 #include"progress_callback.h"
-
+#include"ast_smt2_pp.h"
 // there is a significant space overhead with allocating 1000+ contexts in 
 // the case that each context only references a few expressions.
 // Using a map instead of a vector for the literals can compress space 
@@ -60,16 +60,17 @@ Revision History:
 namespace smt {
 
     class model_generator;
-
+    class theory_sat;
     class context {
         friend class model_generator;
+        friend class theory_sat;
     public:
         statistics                  m_stats;
 
         std::ostream& display_last_failure(std::ostream& out) const;
         std::string last_failure_as_string() const;
         void set_progress_callback(progress_callback *callback);
-
+        int solver_num;
     protected:
         ast_manager &               m_manager;
         front_end_params &          m_fparams;
@@ -143,6 +144,29 @@ namespace smt {
         tmp_enode                   m_tmp_enode;
         ptr_vector<almost_cg_table> m_almost_cg_tables; // temporary field for is_ext_diseq
 
+
+        //void setup_dbg();
+        //void dbg_copy(expr* e,smt2_pp_environment & env,pp_params & params, context * from);
+public:
+#ifdef Z3_DEBUG_SMS
+        void dbg_check(svector<literal> &clause);
+        void dbg_check_propagation(literal l);
+        void dbg_check(int num_lits, literal* lits){
+                	svector<literal> c;
+                	for(int i = 0;i<num_lits;i++)
+                		c.push_back(lits[i]);
+                	dbg_check(c);
+                }
+        void dbg_check_unit(literal l){
+        	svector<literal> c;
+        	c.push_back(l);
+        	dbg_check(c);
+        }
+
+        context* dbg_solver;
+        ptr_addr_map<expr,expr*> dbg_map;
+#endif
+protected:
         // -----------------------------------
         //
         // Boolean engine
@@ -208,12 +232,14 @@ namespace smt {
         bool_var2assumption         m_bool_var2assumption; // maps an expression associated with a literal to the original assumption
         expr_ref_vector             m_unsat_core;
 
+
         // -----------------------------------
         //
         // Accessors
         //
         // -----------------------------------
     public:
+
         ast_manager & get_manager() const {
             return m_manager;
         }
@@ -445,7 +471,7 @@ namespace smt {
         }
 
         bool tracking_assumptions() const {
-            return m_search_lvl > m_base_lvl;
+            return m_assumptions.size() && m_search_lvl > m_base_lvl;
         }
 
         expr * bool_var2expr(bool_var v) const {
@@ -843,7 +869,7 @@ namespace smt {
 
     public:
         void assign(literal l, b_justification j, bool decision = false) {
-            SASSERT(l != false_literal);
+           // SASSERT(l != false_literal);
             SASSERT(l != null_literal);
             switch (get_assignment(l)) {
             case l_false:
@@ -1048,7 +1074,7 @@ namespace smt {
         void end_search();
 
         lbool search();
-
+        lbool unbounded_search();
         void inc_limits();
 
         void tick(unsigned & counter) const;
@@ -1304,7 +1330,7 @@ namespace smt {
         config_mode get_config_mode(bool use_static_features) const;
         virtual void setup_context(bool use_static_features);
         void setup_components(void);
-        void pop_to_base_lvl();
+
 #ifdef Z3DEBUG
         bool already_internalized_theory(theory * th) const;
         bool already_internalized_theory_core(theory * th, expr_ref_vector const & s) const;
@@ -1320,6 +1346,7 @@ namespace smt {
         void assert_expr_core(expr * e, proof * pr);
 
     public:
+        void pop_to_base_lvl();
         context(ast_manager & m, front_end_params & fp, params_ref const & p = params_ref());
 
         virtual ~context();
@@ -1348,6 +1375,15 @@ namespace smt {
         void push();
 
         void pop(unsigned num_scopes);
+
+        //attach a context to this one, so that solving this context will require that sub-context to be solved as well (see export expression)
+        void attach(context * subSolver);
+
+        //Detach a subsolver. This will also disconnect it from any exported expressions (they will be re-attached if the solver is re-attached)
+        void detach(context * subSolver);
+
+        //Export an expression from the subsolver context `from' to this solver. This will create a new variable in the super solver (this solver) that will be connected to the variable e in the subsolver
+        expr* export_expr(expr * to_export, context* from);
 
         lbool check(unsigned num_assumptions = 0, expr * const * assumptions = 0, bool reset_cancel = true);        
         

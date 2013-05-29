@@ -1267,6 +1267,7 @@ namespace z3 {
 
     inline expr context::num_val(int n, sort const & s) { Z3_ast r = Z3_mk_int(m_ctx, n, s); check_error(); return expr(*this, r); }
 
+
     inline expr func_decl::operator()(unsigned n, expr const * args) const {
         array<Z3_ast> _args(n);
         for (unsigned i = 0; i < n; i++) {

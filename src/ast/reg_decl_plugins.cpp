@@ -25,6 +25,7 @@ Revision History:
 #include"dl_decl_plugin.h"
 #include"seq_decl_plugin.h"
 #include"float_decl_plugin.h"
+#include "sat_decl_plugin.h"
 
 void reg_decl_plugins(ast_manager & m) {
     if (!m.get_plugin(m.get_family_id(symbol("arith")))) {
@@ -48,4 +49,7 @@ void reg_decl_plugins(ast_manager & m) {
     if (!m.get_plugin(m.get_family_id(symbol("float")))) {
         m.register_plugin(symbol("float"), alloc(float_decl_plugin));
     }
+    if (!m.get_plugin(m.get_family_id(symbol("satmodsat")))) {
+            m.register_plugin(symbol("satmodsat"), alloc(sat_decl_plugin));
+        }
 }

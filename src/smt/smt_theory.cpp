@@ -23,7 +23,7 @@ Revision History:
 namespace smt {
 
     void theory::init(context * ctx) {
-        SASSERT(m_context == 0);
+      //  SASSERT(m_context == 0);
         m_context = ctx;
         m_manager = &(ctx->get_manager());
     }

@@ -376,6 +376,13 @@ namespace api {
         get_smt_kernel().pop(num_scopes);
     }
 
+    expr* context::export_expr(expr* e,context & child ) {
+          expr * out = get_smt_kernel().export_expr(e,child.get_smt_kernel());
+          save_ast_trail(out);
+          return out;
+      }
+
+
     // ------------------------
     //
     // Parser interface for backward compatibility 

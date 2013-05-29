@@ -26,6 +26,7 @@ Notes:
 #include"datatype_decl_plugin.h"
 #include"seq_decl_plugin.h"
 #include"float_decl_plugin.h"
+#include "sat_decl_plugin.h"
 #include"ast_pp.h"
 #include"var_subst.h"
 #include"pp.h"
@@ -538,6 +539,7 @@ void cmd_context::init_manager_core(bool new_manager) {
         register_plugin(symbol("datatype"), alloc(datatype_decl_plugin), logic_has_datatype());
         register_plugin(symbol("seq"),      alloc(seq_decl_plugin), logic_has_seq());
         register_plugin(symbol("float"),    alloc(float_decl_plugin), logic_has_floats());
+        register_plugin(symbol("satmodsat"),      alloc(sat_decl_plugin), true);
     }
     else {
         // the manager was created by an external module, we must register all plugins available in the manager.

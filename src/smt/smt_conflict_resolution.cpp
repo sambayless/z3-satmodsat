@@ -1331,6 +1331,8 @@ namespace smt {
             process_antecedent_for_unsat_core(*it);
     }
 
+
+
     void conflict_resolution::mk_unsat_core(b_justification conflict, literal not_l) {
         SASSERT(m_ctx.tracking_assumptions());
         m_assumptions.reset();
@@ -1417,6 +1419,265 @@ namespace smt {
         reset_unmark_and_justifications(0, 0);
     }
     
+    void conflict_resolution::process_antecedent_axiomatic(literal antecedent) {
+        TRACE("conflict", tout << "processing antecedent: "; m_ctx.display_literal(tout, antecedent); tout << "\n";);
+        bool_var var = antecedent.var();
+        int l = m_ctx.get_assign_level(var);
+        if(m_ctx.get_assign_level(var)>0){
+			if (!m_ctx.is_marked(var)) {
+				m_ctx.set_mark(var);
+				m_unmark.push_back(var);
+			}
+        }
+    }
+
+    void conflict_resolution::process_justification_axiomatic(justification * js) {
+        literal_vector & antecedents = m_tmp_literal_vector;
+        antecedents.reset();
+        justification2literals_core(js, antecedents);
+        literal_vector::iterator it  = antecedents.begin();
+        literal_vector::iterator end = antecedents.end();
+        for(; it != end; ++it)
+        	process_antecedent_axiomatic(*it);
+    }
+
+    void conflict_resolution::mk_axiomatic_lemma( literal assigned, b_justification conflict) {
+           SASSERT(m_ctx.get_assignment(assigned)==l_true);
+           m_axioms.reset();
+           m_unmark.reset();
+
+   /*        if(assigned==null_literal || assigned==~null_literal){
+        	   return;
+           }*/
+
+           literal consequent  = assigned;
+           b_justification js  =conflict;
+
+           int idx = m_assigned_literals.size()-1;
+           if(assigned!=null_literal &&  assigned!=~null_literal ){
+        	//   m_axioms.push_back(~assigned);
+           	   process_antecedent_axiomatic(consequent);
+           }
+           if (m_assigned_literals.empty()) {
+               goto end_axiomatic;
+           }
+
+           while (true) {
+               TRACE("unsat_core_bug", tout << "js.get_kind(): " << js.get_kind() << ", idx: " << idx << "\n";);
+               switch (js.get_kind()) {
+               case b_justification::CLAUSE: {
+                   clause * cls = js.get_clause();
+                   unsigned num_lits = cls->get_num_literals();
+                   unsigned i        = 0;
+                   if (consequent != false_literal && consequent.var() != null_bool_var) {
+                       SASSERT(cls->get_literal(0) == consequent || cls->get_literal(1) == consequent);
+                       if (cls->get_literal(0) == consequent) {
+                           i = 1;
+                       }
+                       else {
+                           process_antecedent_axiomatic(~cls->get_literal(0));
+                           i = 2;
+                       }
+                   }
+                   for(; i < num_lits; i++) {
+                       literal l = cls->get_literal(i);
+                       process_antecedent_axiomatic(~l);
+                   }
+                  /* justification * js = cls->get_justification();
+                   if (js)
+                       process_justification_axiomatic(js);*/
+                   break;
+               }
+               case b_justification::BIN_CLAUSE:
+                   SASSERT(consequent.var() != js.get_literal().var());
+                   process_antecedent_axiomatic(js.get_literal());
+                   break;
+               case b_justification::AXIOM:
+            	   if(consequent.var()!=null_bool_var  && m_ctx.get_assign_level(consequent.var())>0)
+            		   m_axioms.push_back(~consequent);
+                   break;
+               case b_justification::JUSTIFICATION:
+                   process_justification_axiomatic(js.get_justification());
+                   break;
+               default:
+                   UNREACHABLE();
+               }
+               int base = m_ctx.get_base_level();
+               while (true) {
+                   if (idx < 0)
+                       goto end_axiomatic;
+                   literal l = m_assigned_literals[idx];
+                   TRACE("unsat_core_bug", tout << "l: " << l << ", get_assign_level(l): " << m_ctx.get_assign_level(l) << ", is_marked(l): " << m_ctx.is_marked(l.var()) << "\n";);
+                   if (m_ctx.get_assign_level(l) <=base )
+                       goto end_axiomatic;
+                   if (m_ctx.is_marked(l.var()))
+                       break;
+                   idx--;
+               }
+
+               SASSERT(idx >= 0);
+               consequent     = m_assigned_literals[idx];
+               bool_var c_var = consequent.var();
+               int lev = m_ctx.get_assign_level(c_var);
+               //SASSERT(m_ctx.get_assign_level(c_var) == search_lvl);
+               js             = m_ctx.get_justification(c_var);
+               idx--;
+           }
+
+           end_axiomatic:
+           TRACE("unsat_core", tout << "assumptions:\n"; m_ctx.display_literals(tout, m_assumptions.size(), m_assumptions.c_ptr()); tout << "\n";);
+           reset_unmark_and_justifications(0, 0);
+       }
+
+
+
+
+    void conflict_resolution::process_antecedent_relative(literal antecedent) {
+          TRACE("conflict", tout << "processing antecedent: "; m_ctx.display_literal(tout, antecedent); tout << "\n";);
+          bool_var var = antecedent.var();
+          int l = m_ctx.get_assign_level(var);
+          if(var==399){
+        	  printf("!\n");
+          }
+  			if (!m_ctx.is_marked(var)) {
+  				m_ctx.set_mark(var);
+  				m_unmark.push_back(var);
+  			}
+
+      }
+
+      void conflict_resolution::process_justification_relative(justification * js) {
+          literal_vector & antecedents = m_tmp_literal_vector;
+          antecedents.reset();
+          justification2literals_core(js, antecedents);
+          literal_vector::iterator it  = antecedents.begin();
+          literal_vector::iterator end = antecedents.end();
+          for(; it != end; ++it)
+          	process_antecedent_relative(*it);
+      }
+
+      void conflict_resolution::mk_relative_lemma( literal assigned, b_justification conflict, bool (*is_relative)(literal l, b_justification&, void *), void * data) {
+
+             m_relative.reset();
+             m_unmark.reset();
+
+     /*        if(assigned==null_literal || assigned==~null_literal){
+          	   return;
+             }*/
+             if(assigned!=null_literal &&  assigned!=~null_literal ){
+            	  if(m_ctx.get_assignment(assigned)==l_false){
+						  assigned = ~assigned;
+					  }
+            	 	 if(m_ctx.get_assign_level(assigned)<=m_ctx.get_base_level()){
+            	 		 m_relative.push_back(assigned);
+            	 		 return;
+            	 	 }
+
+
+                          SASSERT(m_ctx.get_assignment(assigned)==l_true);
+                   	//   m_axioms.push_back(~assigned);
+                     	  lbool val = m_ctx.get_assignment(assigned);
+                     	  SASSERT(val==l_true);
+                      	   process_antecedent_relative(assigned);
+                      }
+
+             literal consequent  = assigned;
+
+             b_justification js  =conflict;
+             if(conflict.get_kind()==b_justification::AXIOM){
+            	 SASSERT(assigned.var()!=null_bool_var);
+            	 m_relative.push_back(assigned);
+             }
+             int idx = m_assigned_literals.size()-1;
+
+             if (m_assigned_literals.empty()) {
+                 goto end_relative;
+             }
+
+             while (true) {
+                 TRACE("unsat_core_bug", tout << "js.get_kind(): " << js.get_kind() << ", idx: " << idx << "\n";);
+
+                 if( (*is_relative)(consequent,js,data)){
+                	 m_relative.push_back(~consequent);
+                 }else{
+
+					 switch (js.get_kind()) {
+					 case b_justification::CLAUSE: {
+						 clause * cls = js.get_clause();
+						 unsigned num_lits = cls->get_num_literals();
+						 unsigned i        = 0;
+						 if (consequent != false_literal && consequent.var() != null_bool_var) {
+							 SASSERT(cls->get_literal(0) == consequent || cls->get_literal(1) == consequent);
+							 if (cls->get_literal(0) == consequent) {
+								 i = 1;
+							 }
+							 else {
+								 process_antecedent_relative(~cls->get_literal(0));
+								 i = 2;
+							 }
+						 }
+						 for(; i < num_lits; i++) {
+							 literal l = cls->get_literal(i);
+							 process_antecedent_relative(~l);
+						 }
+						/* justification * js = cls->get_justification();
+						 if (js)
+							 process_justification_axiomatic(js);*/
+						 break;
+					 }
+					 case b_justification::BIN_CLAUSE:
+						 SASSERT(consequent.var() != js.get_literal().var());
+						 process_antecedent_relative(js.get_literal());
+						 break;
+					 case b_justification::AXIOM:
+#ifdef Z3_DEBUG_SMS
+						 if(consequent.var()!=assigned.var())
+							 m_ctx.dbg_check_unit(consequent);
+#endif
+						 break;
+					 case b_justification::JUSTIFICATION:
+						 process_justification_relative(js.get_justification());
+						 break;
+					 default:
+						 UNREACHABLE();
+					 }
+                 }
+                 int base = m_ctx.get_base_level();
+                 while (true) {
+                     if (idx < 0)
+                         goto end_relative;
+                     literal l = m_assigned_literals[idx];
+                     TRACE("unsat_core_bug", tout << "l: " << l << ", get_assign_level(l): " << m_ctx.get_assign_level(l) << ", is_marked(l): " << m_ctx.is_marked(l.var()) << "\n";);
+                    /* if (m_ctx.get_assign_level(l) <=base )
+                         goto end_relative;*/
+                     if (m_ctx.is_marked(l.var()))
+                         break;
+                     idx--;
+                 }
+
+                 SASSERT(idx >= 0);
+                 consequent     = m_assigned_literals[idx];
+                 bool_var c_var = consequent.var();
+                 if(c_var==399){
+                	 int  a=1;
+                 }
+                 if(c_var==399){
+                     	  printf("!\n");
+                       }
+                 int lev = m_ctx.get_assign_level(c_var);
+
+                 js             = m_ctx.get_justification(c_var);
+                 idx--;
+             }
+            // SASSERT(m_ctx.dbg_check_clause(m_relative));
+             end_relative:
+             TRACE("unsat_core", tout << "assumptions:\n"; m_ctx.display_literals(tout, m_assumptions.size(), m_assumptions.c_ptr()); tout << "\n";);
+             reset_unmark_and_justifications(0, 0);
+         }
+
+
+
+
     conflict_resolution * mk_conflict_resolution(ast_manager & m, 
                                                  context & ctx,
                                                  dyn_ack_manager & dack_manager,

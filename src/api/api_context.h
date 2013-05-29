@@ -182,6 +182,8 @@ namespace api {
         void pop(unsigned num_scopes);
         unsigned get_num_scopes() const { return m_ast_lim.size(); }
 
+        //Export an expression from one context to another, so that they must take on the same value in the final model (implying both contexts must be solved together).
+        expr * export_expr(expr * internal, context & subsolver);
         // ------------------------
         //
         // Parser interface for backward compatibility 

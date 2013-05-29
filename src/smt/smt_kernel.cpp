@@ -87,6 +87,12 @@ namespace smt {
             return m_kernel.get_scope_level();
         }
 
+        expr* export_expr(expr* e,kernel & child ){
+        	//bool_var b = m_kernel.export_expr(m_kernel.get_literal(e).var(),&child.m_imp->m_kernel) ;
+        	//return m_kernel.get_b_internalized(b);
+        	return  m_kernel.export_expr(e,&child.m_imp->m_kernel) ;
+        }
+
         lbool setup_and_check() {
             return m_kernel.setup_and_check();
         }
@@ -244,6 +250,10 @@ namespace smt {
             dealloc(m_imp);
             m_imp = alloc(imp, _m, fps, ps);
         }
+    }
+
+    expr* kernel::export_expr(expr* e,kernel & child ){
+    	return m_imp->export_expr(e,child);
     }
 
     bool kernel::inconsistent() {
