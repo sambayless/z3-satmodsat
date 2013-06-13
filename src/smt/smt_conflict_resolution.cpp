@@ -1536,9 +1536,7 @@ namespace smt {
           TRACE("conflict", tout << "processing antecedent: "; m_ctx.display_literal(tout, antecedent); tout << "\n";);
           bool_var var = antecedent.var();
           int l = m_ctx.get_assign_level(var);
-          if(var==399){
-        	  printf("!\n");
-          }
+
   			if (!m_ctx.is_marked(var)) {
   				m_ctx.set_mark(var);
   				m_unmark.push_back(var);
@@ -1585,8 +1583,11 @@ namespace smt {
 
              b_justification js  =conflict;
              if(conflict.get_kind()==b_justification::AXIOM){
-            	 SASSERT(assigned.var()!=null_bool_var);
-            	 m_relative.push_back(assigned);
+           	 SASSERT(assigned.var()!=null_bool_var);
+           	 /*  	 if(get_context().get_assign_level(assigned)> get_context().get_base_level()){
+
+            		 m_relative.push_back(assigned);
+            	 }*/
              }
              int idx = m_assigned_literals.size()-1;
 
@@ -1658,12 +1659,7 @@ namespace smt {
                  SASSERT(idx >= 0);
                  consequent     = m_assigned_literals[idx];
                  bool_var c_var = consequent.var();
-                 if(c_var==399){
-                	 int  a=1;
-                 }
-                 if(c_var==399){
-                     	  printf("!\n");
-                       }
+
                  int lev = m_ctx.get_assign_level(c_var);
 
                  js             = m_ctx.get_justification(c_var);

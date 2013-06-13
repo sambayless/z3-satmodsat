@@ -30,7 +30,8 @@ namespace smt {
         m_name("SubSolver"),
         parent_qhead(0),
         child_qhead(0),
-        child_ctx(NULL)
+        child_ctx(NULL),
+        initial_propagation(true),popto(-1)
         //,
         //th_trail_stack(*this)
     {
@@ -52,7 +53,8 @@ namespace smt {
            m_name("SubSolver"),
            parent_qhead(0),
            child_qhead(0),
-           child_ctx(NULL)
+           child_ctx(NULL),
+           initial_propagation(true),popto(-1)
            //,
            //th_trail_stack(*this)
        {
@@ -101,8 +103,12 @@ namespace smt {
 	    }
 
     void theory_sat::propagate(){
-    	if(!child_ctx )
+    	if(!child_ctx || (!initial_propagation && !child_ctx->inconsistent()  && child_qhead==child_ctx->m_assigned_literals.size()  && child_ctx->m_qhead==child_ctx->m_assigned_literals.size()))
     		return;
+    	 sync_levels();
+    	//if you sync levels here, then final check will fail to detect errors...
+
+    	initial_propagation=false;
     	child_qhead=child_ctx->m_qhead;
     	child_ctx->propagate();
     	if(child_ctx->inconsistent() ){
@@ -116,7 +122,8 @@ namespace smt {
     	            	}
     	            	std::cout<<"\n";
 #endif
-    		//ok, we need to resolve this conflict down to the assignments from the parent solver
+
+    	    //ok, we need to resolve this conflict down to the assignments from the parent solver
     		child_ctx->m_conflict_resolution->mk_relative_lemma((child_ctx->m_not_l), child_ctx->m_conflict, &check_j,this);
 
     		tmp_reason.reset();
@@ -130,6 +137,10 @@ namespace smt {
 					continue;//this literal is trivially false.
 				}
 				literal p_lit = literal(child_parent_map[ c_lit.var()],c_lit.sign());
+				if(p_lit.var()==null_bool_var){
+					exit(3);
+				}
+				SASSERT(p_lit.var()!=null_bool_var);
 
 				int l = get_context().get_assign_level(p_lit.var());
 				if(l>conflict_level){
@@ -156,14 +167,10 @@ namespace smt {
 #ifdef Z3_DEBUG_SMS
 			get_context().dbg_check(tmp_reason);
 #endif
-			//add a new clause into the parent solver using this reason
-
-
-			//generate a conflict in the super solver using this reason.
+			//ok, generate a conflict in the super solver using this reason.
 			if(tmp_reason.size()){
-				//get_context().mk_clause(tmp_reason.size(), tmp_reason.c_ptr(),0,CLS_AUX_LEMMA);
-
-				get_context().assign(tmp_reason[0],new sat_justification(tmp_reason,this));
+				get_context().mk_clause(tmp_reason.size(), tmp_reason.c_ptr(),0,CLS_AUX_LEMMA);
+				//get_context().assign(tmp_reason[0],new sat_justification(tmp_reason,this));
 			}else{
 				get_context().assign(~true_literal,b_justification::mk_axiom());
 			}
@@ -210,17 +217,21 @@ namespace smt {
     void theory_sat::push_scope_eh(){
     	if(!child_ctx)
     	    		return;
-    	while(child_ctx->get_scope_level()<get_context().get_scope_level())
-    		child_ctx->push_scope();
+    	//don't do anything here - instead, sync_levels will lazily syncronize the levels between the child and parent solvers when assignments or propagations occur.
+    /*	while(child_ctx->get_scope_level()<get_context().get_scope_level())
+    		child_ctx->push_scope();*/
     }
     void theory_sat::pop_scope_eh(unsigned num_scopes){
     	if(!child_ctx)
     	    		return;
 
     	int newlev = get_context().get_scope_level()-num_scopes;
-    	if(child_ctx->get_scope_level()>newlev)
-    		child_ctx->pop_scope(child_ctx->get_scope_level()-newlev);
+    	if(newlev < child_ctx->get_scope_level() && (popto<0 || newlev<popto))
+    		popto = newlev;
+    	//if(child_ctx->get_scope_level()>newlev)
+    	//	child_ctx->pop_scope(child_ctx->get_scope_level()-newlev);
     }
+
 
 
     void theory_sat::mk_reason_for(literal parent_lit, svector<literal> & reason_out) {
@@ -242,9 +253,14 @@ namespace smt {
 #endif
     	child_ctx->m_conflict_resolution->mk_relative_lemma(child_lit,b_justification::mk_axiom(),&check_j,this);
     	reason_out.reset();
+
+    	reason_out.push_back(parent_lit);
     	for(literal_vector::const_iterator i = child_ctx->m_conflict_resolution->begin_relative();i!= child_ctx->m_conflict_resolution->end_relative();i++){
     		literal c_lit = *i;
     		literal p_lit = literal(child_parent_map[ c_lit.var()],c_lit.sign());
+    		if(p_lit.var()==null_bool_var){
+    							exit(3);
+    						}
     		reason_out.push_back(p_lit);
     	}
     	//reason_out[0]=~reason_out[0];
@@ -256,12 +272,8 @@ namespace smt {
      void theory_sat::assign_eh(bool_var v, bool is_true){
     	 if(!child_ctx||  !parent_child_map.size())
     	     		return;
+    	 sync_levels();
 
-      	if(child_ctx->get_scope_level()>get_context().get_scope_level())
-      		child_ctx->pop_scope(child_ctx->get_scope_level()-get_context().get_scope_level());
-
-    	 while(child_ctx->get_scope_level()<get_context().get_scope_level())
-    	     		child_ctx->push_scope();
 
 
     	literal child_lit = literal(parent_child_map[v],!is_true);
@@ -356,7 +368,7 @@ namespace smt {
     }
 
     void theory_sat::new_eq_eh(theory_var v1, theory_var v2) {
-        UNREACHABLE();
+
     }
 
     bool theory_sat::use_diseqs() const {
@@ -368,8 +380,10 @@ namespace smt {
     }
 
     void theory_sat::reset_eh() {
-
+    	initial_propagation=true;
+    	child_qhead=0;
         theory::reset_eh();
+
     }
     void theory_sat::init_search_eh(){
     if(!child_ctx)
@@ -390,7 +404,7 @@ namespace smt {
     	for(int i = 0;i<child_ctx->m_assigned_literals.size();i++){
     		child_ctx->m_assumptions.push_back(l.var());
     	}*/
-
+    	sync_levels();
     	if(!child_ctx->propagate())
         		return FC_CONTINUE;
 

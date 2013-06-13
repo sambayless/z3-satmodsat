@@ -54,9 +54,6 @@ namespace smt {
 		        	 antecedents_size = reason.size();
 		        	 for(int i = 0;i<reason.size();i++)
 		        		 antecedents[i]=reason[i];
-
-
-
 		         }
 		         ~sat_justification(){
 		        	 if(antecedents_size){
@@ -133,8 +130,8 @@ protected:
          svector<bool_var> child_parent_map;
 
          char * m_name;
-
-
+         bool initial_propagation;
+         int popto;
         context * child_ctx;
         vector<expr*> exported;
 
@@ -151,7 +148,26 @@ protected:
                    return false;
                }
                virtual bool can_propagate() {
-            	   return child_ctx && child_qhead<get_context().m_qhead;
+            	   //in principle, we should just return child_ctx->can_propagate();
+            	   int qh = child_ctx&& child_ctx->m_qhead ;
+            	   int sz = child_ctx&& child_ctx->m_assigned_literals.size();
+            	   bool conflict =child_ctx&&  child_ctx->inconsistent() ;
+            	   //But that will lead to a huge recursive call being made at every propagation step.
+            	   //So instead, we ensure that there is propagation at the very first step, and afterward assume that if the current solver is up to date, so are the sub solvers
+            	   bool canprop = (child_ctx && (initial_propagation || child_qhead<  child_ctx->m_qhead  || child_ctx->m_qhead!=child_ctx->m_assigned_literals.size()));
+            	 //  bool can_prop= child_ctx && (initial_propagation || child_qhead<get_context().m_assigned_literals.size() || child_ctx->m_qhead < child_ctx->m_assigned_literals.size());
+            	   return (child_ctx && (initial_propagation || child_ctx->inconsistent()   || child_qhead<  child_ctx->m_qhead || child_ctx->m_qhead!=child_ctx->m_assigned_literals.size()));
+                /*   return child_ctx && (initial_propagation ||
+                		   child_ctx->m_qhead != child_ctx->m_assigned_literals.size() ||
+                		   child_ctx->m_relevancy_propagator->can_propagate() ||
+                		   !child_ctx->m_atom_propagation_queue.empty() ||
+                		   child_ctx->m_qmanager->can_propagate() ||
+                        !child_ctx->m_eq_propagation_queue.empty() ||
+                        !child_ctx->m_th_eq_propagation_queue.empty() ||
+                        !child_ctx->m_th_diseq_propagation_queue.empty());*/
+            	   //   SASSERT(can_prop== (child_ctx && parent_child_map.size() && child_ctx->can_propagate()) );
+            	  // return can_prop;
+            	    //return child_ctx;// && ((child_qhead<get_context().) || (child_ctx->m_qhead < child_ctx->m_assigned_literals.size()));
 					//return child_ctx && parent_child_map.size() && child_ctx->can_propagate();
                }
                void init_search_eh();
@@ -164,6 +180,20 @@ protected:
 
             	   return  child_parent_map.size()>child_var && child_parent_map[child_var] != null_bool_var;
                }
+
+               void sync_levels(){
+            	 /*  if(get_context().get_scope_level()<popto || popto<0){
+            		   popto = get_context().get_scope_level();
+            	   }*/
+                 	if(child_ctx->get_scope_level()>popto && popto>=0)
+                 		child_ctx->pop_scope(child_ctx->get_scope_level()-popto);
+            		popto=-1;
+                 		while(child_ctx->get_scope_level()<get_context().get_scope_level())
+               	     		child_ctx->push_scope();
+
+
+               }
+
                 literal_vector  m_tmp_literal_vector;
            public:
 
