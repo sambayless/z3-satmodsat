@@ -3574,7 +3574,7 @@ namespace smt {
 
                 if (m_num_conflicts_since_lemma_gc > m_lemma_gc_threshold &&
                     (m_fparams.m_lemma_gc_strategy == LGC_FIXED || m_fparams.m_lemma_gc_strategy == LGC_GEOMETRIC)) {
-                    del_inactive_lemmas();
+                   // del_inactive_lemmas();
                 }
 
                 m_dyn_ack_manager.propagate_eh();
@@ -3589,6 +3589,7 @@ namespace smt {
             if (m_base_lvl == m_scope_lvl && m_fparams.m_simplify_clauses)
                 simplify_clauses();
             
+
             if (!decide()) {
                 final_check_status fcs = final_check();
                 TRACE("final_check_result", tout << "fcs: " << fcs << " last_search_failure: " << m_last_search_failure << "\n";);
@@ -3919,7 +3920,10 @@ namespace smt {
 #endif
            // dbg_check(num_lits,lits);
             mk_clause(num_lits, lits, js, CLS_LEARNED);
-            if (delay_forced_restart) {
+
+
+
+            if (delay_forced_restart || (num_lits==1 && get_search_level()>get_base_level())) {
                 SASSERT(num_lits == 1);
                 expr * unit     = bool_var2expr(lits[0].var());
                 bool unit_sign  = lits[0].sign();

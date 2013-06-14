@@ -87,8 +87,16 @@ namespace smt {
 		 child_ctx=NULL;
 	 }
 	    bool check_j(literal l,b_justification & b, void * data) {
-
+	    	if(l==null_literal)
+	    		return false;
 	    	theory_sat & outer = *(theory_sat*)data;
+	    	if(outer.child_ctx->get_assign_level(l)<=outer.child_ctx->get_base_level()){
+	    		//if(outer.child_parent_map.contains(l.var())){
+	    		bool_var v = outer.child_parent_map[ l.var()];
+	    		if(v!=null_bool_var)
+	    			return true;
+
+	    	}
 	               	  if(b.get_kind()==b_justification::JUSTIFICATION ){
 	       				 justification * j = b.get_justification();
 	       				 if(j && j->get_from_theory()==outer.get_family_id()){
@@ -97,15 +105,25 @@ namespace smt {
 	       					 return sj->fromParentTheory();
 	       				 }
 	       				 return false;
-	       			 }else{
+	       			 }else if (b.get_kind()==b_justification::AXIOM){
+	       				theory_sat & outer = *(theory_sat*)data;
+	       				bool_var v = outer.child_parent_map[ l.var()];
+	       				return (v!=null_bool_var);
+
+	       				//return  outer.child_ctx->get_assign_level(l)<=outer.child_ctx->get_base_level() && outer.child_parent_map.contains(l.var());
+	       			 } else{
 	       				 return false;
 	       			 }
 	    }
 
     void theory_sat::propagate(){
-    	if(!child_ctx || (!initial_propagation && !child_ctx->inconsistent()  && child_qhead==child_ctx->m_assigned_literals.size()  && child_ctx->m_qhead==child_ctx->m_assigned_literals.size()))
+    	if(!child_ctx)
     		return;
-    	 sync_levels();
+    	sync_levels();
+
+    	if((!initial_propagation && !child_ctx->inconsistent()  && child_ctx->m_qhead==child_ctx->m_assigned_literals.size()))
+    		return;
+
     	//if you sync levels here, then final check will fail to detect errors...
 
     	initial_propagation=false;
@@ -124,7 +142,10 @@ namespace smt {
 #endif
 
     	    //ok, we need to resolve this conflict down to the assignments from the parent solver
-    		child_ctx->m_conflict_resolution->mk_relative_lemma((child_ctx->m_not_l), child_ctx->m_conflict, &check_j,this);
+    	    if(child_ctx->m_not_l.var()==9 && child_ctx->m_not_l.sign()){
+    	    	int a =1;
+    	    }
+    		child_ctx->m_conflict_resolution->mk_relative_lemma((child_ctx->m_not_l), child_ctx->m_conflict,false, &check_j,this);
 
     		tmp_reason.reset();
     		//Translate the clause into the parent's variable space
@@ -136,10 +157,22 @@ namespace smt {
 				if(c_lit==false_literal){
 					continue;//this literal is trivially false.
 				}
+				if(child_ctx->get_assign_level(c_lit)<=child_ctx->get_base_level()){
+					//this is a unit lit
+					if(child_ctx->get_assign_level(c_lit)==l_false){
+						continue;//skip this literal
+					}else{
+
+					}
+				}
+
+
+
 				literal p_lit = literal(child_parent_map[ c_lit.var()],c_lit.sign());
 				if(p_lit.var()==null_bool_var){
 					exit(3);
 				}
+
 				SASSERT(p_lit.var()!=null_bool_var);
 
 				int l = get_context().get_assign_level(p_lit.var());
@@ -203,7 +236,7 @@ namespace smt {
 #ifdef REPORT
 					std::cout<< child_ctx->solver_num << "(" << local_l << ")" << " to " << get_context().solver_num << "(" << parent_l << ")\n";
 #endif
-#ifdef Z3_DEBUG_SUB
+#ifdef Z3_DEBUG_SMS
 					get_context().dbg_check_propagation(parent_l);
 #endif
 					if(get_context().get_assignment(parent_l) != l_true)
@@ -251,8 +284,10 @@ namespace smt {
             	}
             	std::cout<<"\n";
 #endif
-    	child_ctx->m_conflict_resolution->mk_relative_lemma(child_lit,b_justification::mk_axiom(),&check_j,this);
+    	child_ctx->m_conflict_resolution->mk_relative_lemma(child_lit,b_justification::mk_axiom(),true,&check_j,this);
     	reason_out.reset();
+
+
 
     	reason_out.push_back(parent_lit);
     	for(literal_vector::const_iterator i = child_ctx->m_conflict_resolution->begin_relative();i!= child_ctx->m_conflict_resolution->end_relative();i++){
@@ -263,6 +298,8 @@ namespace smt {
     						}
     		reason_out.push_back(p_lit);
     	}
+
+
     	//reason_out[0]=~reason_out[0];
 #ifdef Z3_DEBUG_SMS
     	get_context().dbg_check(reason_out);
@@ -408,11 +445,7 @@ namespace smt {
     	if(!child_ctx->propagate())
         		return FC_CONTINUE;
 
-      	if(child_ctx->get_scope_level()>get_context().get_scope_level())
-      		child_ctx->pop_scope(child_ctx->get_scope_level()-get_context().get_scope_level());
 
-    	 while(child_ctx->get_scope_level()<get_context().get_scope_level())
-    	     		child_ctx->push_scope();
     	int start_lev = child_ctx->get_scope_level();
     	int start_base =   child_ctx->m_base_lvl;
 #ifdef REPORT

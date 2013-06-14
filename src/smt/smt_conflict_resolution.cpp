@@ -297,6 +297,7 @@ namespace smt {
         if (!m_ctx.is_marked(var) && lvl > m_ctx.get_base_level()) {
             m_ctx.set_mark(var);
             m_ctx.inc_bvar_activity(var);
+
             expr * n = m_ctx.bool_var2expr(var);
             if (is_app(n)) {
                 family_id fid = to_app(n)->get_family_id();
@@ -313,6 +314,7 @@ namespace smt {
 #endif
             if (lvl == m_conflict_lvl) {
                 num_marks++;
+              //  std::cout<<"Marked: " << var <<"\n";
             }
             else {
                 m_lemma.push_back(~antecedent);
@@ -464,6 +466,8 @@ namespace smt {
 
         if (!initialize_resolve(conflict, not_l, js, consequent))
             return false;
+
+
 
         unsigned idx = skip_literals_above_conflict_level();
 
@@ -1554,7 +1558,7 @@ namespace smt {
           	process_antecedent_relative(*it);
       }
 
-      void conflict_resolution::mk_relative_lemma( literal assigned, b_justification conflict, bool (*is_relative)(literal l, b_justification&, void *), void * data) {
+      void conflict_resolution::mk_relative_lemma( literal assigned, b_justification conflict, bool unit_prop_reason, bool (*is_relative)(literal l, b_justification&, void *), void * data) {
 
              m_relative.reset();
              m_unmark.reset();
@@ -1566,9 +1570,16 @@ namespace smt {
             	  if(m_ctx.get_assignment(assigned)==l_false){
 						  assigned = ~assigned;
 					  }
-            	 	 if(m_ctx.get_assign_level(assigned)<=m_ctx.get_base_level()){
-            	 		 m_relative.push_back(assigned);
-            	 		 return;
+            	  b_justification jt =  m_ctx.get_justification(assigned.var());
+            	 	if(m_ctx.get_assign_level(assigned)<=m_ctx.get_base_level()){
+            	 		 if(m_ctx.get_assignment(assigned)==l_true && is_relative(assigned,jt,data) ){
+
+							 //this is a constant
+							 m_relative.push_back(assigned);
+							 return;
+            	 		 }else{
+            	 			 int a =1;
+            	 		 }
             	 	 }
 
 
@@ -1590,7 +1601,7 @@ namespace smt {
             	 }*/
              }
              int idx = m_assigned_literals.size()-1;
-
+             bool first = unit_prop_reason;
              if (m_assigned_literals.empty()) {
                  goto end_relative;
              }
@@ -1599,7 +1610,8 @@ namespace smt {
                  TRACE("unsat_core_bug", tout << "js.get_kind(): " << js.get_kind() << ", idx: " << idx << "\n";);
 
                  if( (*is_relative)(consequent,js,data)){
-                	 m_relative.push_back(~consequent);
+                	 SASSERT(m_ctx.get_assignment(consequent)==l_true);
+                	 m_relative.push_back(first? consequent: ~consequent);
                  }else{
 
 					 switch (js.get_kind()) {
@@ -1643,6 +1655,7 @@ namespace smt {
 						 UNREACHABLE();
 					 }
                  }
+                 first=false;
                  int base = m_ctx.get_base_level();
                  while (true) {
                      if (idx < 0)

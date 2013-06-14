@@ -166,7 +166,7 @@ namespace smt {
         void mk_axiomatic_lemma(literal assigned, b_justification conflict=b_justification::mk_axiom());
 
 
-        void mk_relative_lemma( literal assigned, b_justification conflict,bool (*is_relative)(literal l, b_justification&, void *), void * data);
+        void mk_relative_lemma( literal assigned, b_justification conflict, bool unit_prop_reason,bool (*is_relative)(literal l, b_justification&, void *), void * data);
 
 
     protected:

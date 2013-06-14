@@ -61,6 +61,8 @@ unsigned read_aig(char const* file_name, front_end_params& front_end_params) {
     //cmd_context ctx(&front_end_params);
     ast_manager m;
     front_end_params.m_minimize_lemmas=false;//disabled for now
+    front_end_params.m_relevancy_lvl=0;
+
     reg_decl_plugins(m);
     smt::context *ctx = new smt::context(m,front_end_params);
     // temporary hack until strategic_solver is ported to new tactic framework
