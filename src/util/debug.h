@@ -31,7 +31,7 @@ bool assertions_enabled();
 
 #include"error_codes.h"
 #include"warning.h"
-
+#include<stdlib.h>
 #ifdef Z3DEBUG
 #define DEBUG_CODE(CODE) { CODE } ((void) 0)
 #else
@@ -42,7 +42,7 @@ bool assertions_enabled();
 #define INVOKE_DEBUGGER() __debugbreak()
 #else
 void invoke_gdb();
-#define INVOKE_DEBUGGER() invoke_gdb()
+#define INVOKE_DEBUGGER() abort()//invoke_gdb()
 #endif
 
 void notify_assertion_violation(const char * file_name, int line, const char * condition);

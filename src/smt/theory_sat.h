@@ -157,7 +157,6 @@ namespace smt {
 						}
 					}
 
-		        	//delete(this);
 
 		        }
 		        virtual theory_id get_from_theory() const {
@@ -188,6 +187,7 @@ public:
          bool initial_propagation;
          int popto;
         context * child_ctx;
+        bool m_flip_assign;
         vector<expr*> exported;
 
            protected:
@@ -236,17 +236,85 @@ public:
             	   return  child_parent_map.size()>child_var && child_parent_map[child_var] != null_bool_var;
                }
 
-               void sync_levels(){
+               void sync_levels(int tolevel=-1){
             	 /*  if(get_context().get_scope_level()<popto || popto<0){
             		   popto = get_context().get_scope_level();
             	   }*/
-                 	if(child_ctx->get_scope_level()>popto && popto>=0)
+            	     	/*	if(popto>-1 && popto<child_ctx->m_search_lvl && popto < get_context().m_scope_lvl)
+            	    		popto=child_ctx->m_search_lvl;*/
+            	   if(child_ctx->get_scope_level()> tolevel && tolevel>=0){
+            		   if(popto<0 || popto>tolevel)
+            			   popto = tolevel;
+            	   }
+                 	if(child_ctx->get_scope_level()>popto && popto>=0){
                  		child_ctx->pop_scope(child_ctx->get_scope_level()-popto);
+                 	}
+            		 if(child_qhead>child_ctx->m_qhead)
+            		            	 child_qhead=child_ctx->m_qhead;
             		popto=-1;
-                 		while(child_ctx->get_scope_level()<get_context().get_scope_level())
+            		if(tolevel<0)
+            			tolevel=get_context().get_scope_level();
+                 		while(child_ctx->get_scope_level()<tolevel)
                	     		child_ctx->push_scope();
+                 	child_ctx->m_search_lvl=get_context().get_search_level();//is there somewhere else we can do this?
+
+               }
+
+               //check that child context and its parent are properly syncronized
+               void dbg_sync(bool exact=false){
+            	   if(get_context().inconsistent() || get_context().get_scope_level()==0 || child_ctx->get_scope_level()==0 || child_ctx->inconsistent())
+            		   return;
+
+            	   int clv = child_ctx->get_scope_level();
+            	   int plv = get_context().get_scope_level();
+            	   SASSERT(clv<=plv);
+            	   if(exact){
+            		   SASSERT(clv==plv);
+            	   }
+            	   for(int i = 0;i<get_context().m_assigned_literals.size() ;i++){
+            		   literal plit = get_context().m_assigned_literals[i];
+            		   int llv = get_context().get_assign_level(plit);
+            		   if(llv>clv)
+            			   break;
+
+            		   bool_var v = plit.var();
+            		   if(get_context().get_var_theory(v)==get_family_id()){
+            			   literal child_lit = literal(parent_child_map[v],plit.sign());
+            			   literal t = literal(child_parent_map[child_lit.var()],plit.sign());
+            			   lbool cval = child_ctx->get_assignment(child_lit);
+            			   SASSERT(t==plit);
+            			   int clev = child_ctx->get_assign_level(child_lit);
+            			   SASSERT(child_ctx->get_assignment(child_lit)==l_true);
+            			   SASSERT(clev<=llv);
+            		   }
+            	   }
+
+            	   for(int i = 0;i<child_ctx->m_assigned_literals.size() ;i++){
+					   literal childlit = child_ctx->m_assigned_literals[i];
+
+					   bool_var v = childlit.var();
+					  // if(child_parent_map.contains(v)){
+						   bool_var p = child_parent_map[v];
+						   if(p!=null_bool_var){
+							   literal plit = literal(p,childlit.sign());
+							   int clev = child_ctx->get_assign_level(childlit);
+							   int plev = get_context().get_assign_level(plit);
+							   lbool val = get_context().get_assignment(plit);
+							   SASSERT(clev<=plev);
+							   if(exact){
+								   SASSERT(clev==plev || plev==get_context().get_search_level());
+							   }
+
+							  //
+							   if(exact){
+								   SASSERT(get_context().get_assignment(plit)==l_true);
+							   }
+						   }
 
 
+					  // }
+
+				   }
                }
 
                 literal_vector  m_tmp_literal_vector;
@@ -287,6 +355,10 @@ public:
                void connect(bool_var parent, bool_var c, context* child);
                void attach(context * child);
                void dettach(context * child);
+
+               bool decide(){
+
+               }
            };
 };
 

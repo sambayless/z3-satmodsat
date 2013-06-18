@@ -1075,6 +1075,7 @@ protected:
 
         lbool search();
         lbool unbounded_search();
+        lbool forced_search();
         void inc_limits();
 
         void tick(unsigned & counter) const;

@@ -134,16 +134,21 @@ unsigned read_aig(char const* file_name, front_end_params& front_end_params) {
 
 #ifdef Z3_DEBUG_SMS
        	    //debug solver
+    	    ast_manager * mdbg = new ast_manager();
+			reg_decl_plugins(*mdbg);
+			smt::context *dbg_ctx = new smt::context(*mdbg,front_end_params);
+			vector<expr*> dbg_out_latches_prev;
+			expr* dbg_any_out = 0;
+			 expr * dbg_property=0;
+			 expr * dbgeq=0;
 			{
-				ast_manager * mdbg = new ast_manager();
-				reg_decl_plugins(*mdbg);
-				smt::context *dbg_ctx = new smt::context(*mdbg,front_end_params);
+
 
 			    vector<expr*> dbg_inputs;
 			    vector<expr*> dbg_outputs;
 			    vector<expr*> dbg_in_latches;
 			    vector<expr*> dbg_out_latches;
-			    vector<expr*> dbg_out_latches_prev;
+
 			    vector<expr*> dbg_gates;
 
 				std::ifstream in(file_name);
@@ -178,9 +183,14 @@ unsigned read_aig(char const* file_name, front_end_params& front_end_params) {
 					ctx2->dbg_map.insert(e,dbg_gates[j]);
 				}
 				ctx2->dbg_solver= dbg_ctx;
+				 dbg_any_out = dbg_ctx->get_manager().mk_or(dbg_outputs.size(),dbg_outputs.c_ptr());
+
+
+
+				dbg_property = dbg_ctx->get_manager().mk_fresh_const("Property",dbg_ctx->get_manager().mk_bool_sort());
+				dbgeq = dbg_ctx->get_manager().mk_eq(dbg_property,dbg_any_out);
 
 				dbg_ctx->push();
-				expr* dbg_any_out = dbg_ctx->get_manager().mk_or(dbg_outputs.size(),dbg_outputs.c_ptr());
 				dbg_ctx->assert_expr(dbg_any_out);
 				/*dbg_ctx->assert_expr(t);
 				expr*e=dbg_ctx->get_manager().mk_not(t);
@@ -190,7 +200,7 @@ unsigned read_aig(char const* file_name, front_end_params& front_end_params) {
 				lbool s = dbg_ctx->check();
 
 				dbg_ctx->pop_to_base_lvl();
-				dbg_ctx->pop(1);
+						dbg_ctx->pop(1);
 
 			}
 #endif
@@ -200,18 +210,34 @@ unsigned read_aig(char const* file_name, front_end_params& front_end_params) {
     	    expr* any_out = m->mk_or(outputs.size(),outputs.c_ptr());
     	    for(int i = 0;i<in_latches.size();i++){
     	    	expr* e= ctx2->export_expr(out_latches_prev[i],ctx);
-    	 	    ctx2->assert_expr(m->mk_eq(e,in_latches[i]));
+    	    	expr * eq = m->mk_eq(e,in_latches[i]);
+    	 	    ctx2->assert_expr(eq);
+#ifdef Z3_DEBUG_SMS
+    	 	   ctx2->dbg_map.insert(e, dbg_out_latches_prev[i]);
+    	 	   ctx2->dbg_map.insert(eq,dbg_ctx->get_manager().mk_true() );
+#endif
     	    }
 
     	   // ctx2->push();
     	   //    ctx2->assert_expr(any_out);
     	    expr * property = ctx2->get_manager().mk_fresh_const("Property",ctx2->get_manager().mk_bool_sort());
-    	    ctx2->assert_expr(ctx2->get_manager().mk_eq(property,any_out));
+    	    expr * eq = ctx2->get_manager().mk_eq(property,any_out);
+    	    ctx2->assert_expr(eq);
+
+#ifdef Z3_DEBUG_SMS
+    	 	   ctx2->dbg_map.insert(any_out, dbg_any_out );
+    	 	  ctx2->dbg_map.insert(property, dbg_property );
+    	 	   ctx2->dbg_map.insert(eq,dbgeq );
+#endif
+
     	      lbool res = ctx2->check(1,&property);
     	   //   ctx2->pop_to_base_lvl();
     	   //    ctx2->pop(1);
 		    result = (res==l_true);
 		    ctx = ctx2;
+#ifdef Z3_DEBUG_SMS
+
+#endif
 
     	}
 

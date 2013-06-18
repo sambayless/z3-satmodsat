@@ -178,9 +178,10 @@ namespace smt {
     
     void context::assign_core(literal l, b_justification j, bool decision) {
     	int lv = l.var();
-    	if((l.var()==7) && j.get_kind()==b_justification::AXIOM ){
+    	if((l.var()==5 )  ){
     		int a =1;
     	}
+
 #ifdef REPORT
     	//std::cout<< solver_num << " Assign " << l  << " (" << l.var() << ", " << l.sign()<< ")" <<  " " << mk_pp(get_b_internalized(l.var()), m_manager) << "\n";
 #endif
@@ -207,6 +208,13 @@ namespace smt {
         if (m_fparams.m_trace_stream != NULL)
             trace_assign(l, j, decision);
         m_case_split_queue->assign_lit_eh(l);
+#endif
+#ifdef Z3_DEBUG_SMS
+    	//if(j.get_kind()!=b_justification::AXIOM)
+    //		dbg_check_propagation(l);
+    /*	if(m_scope_lvl==0){
+    		dbg_check_unit(l);
+    	}*/
 #endif
     }
     
@@ -2332,27 +2340,38 @@ namespace smt {
         reset_cache_generation();
     }
 
+
     void context::pop_to_base_lvl() {
         SASSERT(m_scope_lvl >= m_base_lvl);
         if (!at_base_level()) {
             unsigned num_lvls = m_scope_lvl - m_base_lvl;
             pop_scope(num_lvls);
         }
+
         SASSERT(m_scope_lvl == m_base_lvl);
     }
 #ifdef Z3_DEBUG_SMS
+
+
     void context::dbg_check_propagation(literal p){
     	if(!dbg_solver)
 			return;
+    	if(get_assign_level(p)<=1){
+    		return;//skip this for now, because we aren't handling assumptions properly
+    	}
     	 theory_sat * theory =(theory_sat*) get_theory(m_manager.get_family_id("satmodsat"));
     	svector<expr*> dbg_clause;
     	for(int i = 0;i<m_assigned_literals.size();i++){
 
     		bool_var v=m_assigned_literals[i].var();
-    		if(get_var_theory(v)==theory->get_family_id()){
-
+    		if(v==p.var())
+    			continue;
+    		//if(get_var_theory(v)==theory->get_family_id()){
+    		if (get_justification(v).get_kind()==b_justification::AXIOM){
 
     		expr* e = get_b_internalized(v);
+    		if(!dbg_map.contains(e))
+    			continue;
 			expr * d = dbg_map.find(e);
 			expr* de = m_assigned_literals[i].sign()? dbg_solver->get_manager().mk_not(d):d;
 			dbg_clause.push_back(de);
@@ -2362,10 +2381,12 @@ namespace smt {
 
     	{
     		bool_var v=p.var();
-			SASSERT(get_var_theory(v)==theory->get_family_id());
+			//SASSERT(get_var_theory(v)==theory->get_family_id());
 
 
 			expr* e = get_b_internalized(v);
+			if(!dbg_map.contains(e))
+				return;
 			expr * d = dbg_map.find(e);
 			expr* de = p.sign()? d:dbg_solver->get_manager().mk_not(d);
 			dbg_clause.push_back(de);
@@ -2379,8 +2400,33 @@ namespace smt {
 		dbg_solver->pop_to_base_lvl();
 		dbg_solver->pop(1);
 		if(s!=l_false){
+
+			b_justification j = get_justification(p.var());
+			if(j.get_kind()==b_justification::CLAUSE){
+				clause * c = j.get_clause();
+
+				svector<literal> cls;
+				for(int i = 0;i<c->get_num_literals();i++){
+					literal l = c->get_literal(i);
+					cls.push_back(l);
+				}
+				dbg_check(cls);
+				for(int i = 0;i<c->get_num_literals();i++){
+					literal l = c->get_literal(i);
+
+
+					if(!(l==p)){
+						SASSERT(get_assignment(l)==l_false);
+						dbg_check_propagation(~l);
+					}
+
+				}
+			}
+
 			exit(3);
 		}
+
+
 		SASSERT(s==l_false);
 		lbool st2 = dbg_solver->check();
 		SASSERT(st2==l_true);
@@ -2395,6 +2441,8 @@ namespace smt {
     		//translate the clause into the debug solvers space
     		bool_var v = clause[i].var();
     		expr* e = get_b_internalized(v);
+    		if(!dbg_map.contains(e))
+    			return;
     		expr * d = dbg_map.find(e);
 
 
@@ -2450,7 +2498,7 @@ namespace smt {
     	//m_manager.inc_ref(e);
 
 #ifdef REPORT
-    	 std::cout<<"Exported " <<  mk_pp(to_export, from->get_manager()) << " from " << from->solver_num << " to "  <<  solver_num  << "\n";
+    //	 std::cout<<"Exported " <<  mk_pp(to_export, from->get_manager()) << " from " << from->solver_num << " to "  <<  solver_num  << "\n";
 #endif
     	 if(s->isExported(to_export,from)){
     		 return s->getExported(to_export,from);
@@ -3403,16 +3451,134 @@ namespace smt {
         end_search();
         return status;
     }
+
+    lbool context::forced_search(){
+
+    		int starting_lvl = get_scope_level();
+            SASSERT(!inconsistent());
+            unsigned counter = 0;
+
+            TRACE("bounded_search", tout << "starting bounded search...\n";);
+            static int iteration=0;
+            while (true) {
+			   if(get_scope_level()<starting_lvl){
+							  //then we backtracked past our starting point during search.
+							  return l_undef;//give up
+						  }
+            	int outer_it = ++iteration;
+                while (!propagate()) {
+                	int local_it = ++iteration;
+                	if(local_it==68){
+                		int a=1;
+                	}
+                    TRACE_CODE({
+                        static bool first_propagate = true;
+                        if (first_propagate) {
+                            first_propagate = false;
+                            TRACE("after_first_propagate", display(tout););
+                        }
+                    });
+
+                    tick(counter);
+
+                    {
+    #ifdef REPORT
+                       	std::cout<<"Conflict: ";
+    					for(int i = 0;i<m_assigned_literals.size();i++){
+    							literal l = m_assigned_literals[i];
+    							int lev = get_assign_level(l);
+    							std::cout<<  l << "(L" << lev << ") ";
+    						}
+    						std::cout<<"\n";
+    					//now put the base level back to what it used to be
+    					int lev = get_scope_level();
+
+    					std::cout<<"Conflict: " << m_not_l <<" ";
+    					if(m_conflict.get_kind()==b_justification::JUSTIFICATION){
+    						justification * j = m_conflict.get_justification();
+    						std::cout<<j;
+    					}
+    					std::cout<<"\n";
+    #endif
+                    }
+
+                    if (!resolve_conflict())
+                        return l_false;
+
+                    SASSERT(m_scope_lvl >= m_base_lvl);
+
+                    if (!inconsistent()) {
+                        if (resource_limits_exceeded())
+                            return l_undef;
+
+                        if (m_num_conflicts_since_restart > m_restart_threshold && m_scope_lvl - m_base_lvl > 2) {
+                            TRACE("search_bug", tout << "bounded-search return undef, inconsistent: " << inconsistent() << "\n";);
+                            return l_undef; // restart
+                        }
+
+                        if (m_num_conflicts > m_fparams.m_max_conflicts) {
+                            TRACE("search_bug", tout << "bounded-search return undef, inconsistent: " << inconsistent() << "\n";);
+                            m_last_search_failure = NUM_CONFLICTS;
+                            return l_undef;
+                        }
+                    }
+
+                    if (m_num_conflicts_since_lemma_gc > m_lemma_gc_threshold &&
+                        (m_fparams.m_lemma_gc_strategy == LGC_FIXED || m_fparams.m_lemma_gc_strategy == LGC_GEOMETRIC)) {
+                       // del_inactive_lemmas();
+                    }
+
+                    m_dyn_ack_manager.propagate_eh();
+                    CASSERT("dyn_ack", check_clauses(m_lemmas) && check_clauses(m_aux_clauses));
+                }
+
+                if (resource_limits_exceeded()) {
+                    SASSERT(!inconsistent());
+                    return l_undef;
+                }
+
+                if (m_base_lvl == m_scope_lvl && m_fparams.m_simplify_clauses)
+                    simplify_clauses();
+
+                if(m_scope_lvl<starting_lvl){
+                  	return l_undef;
+      			 }
+
+				if (!decide()) {
+					final_check_status fcs = final_check();
+					TRACE("final_check_result", tout << "fcs: " << fcs << " last_search_failure: " << m_last_search_failure << "\n";);
+					switch (fcs) {
+					case FC_DONE:
+						return l_true;
+					case FC_CONTINUE:
+						break;
+					case FC_GIVEUP:
+						return l_undef;
+					}
+				}
+
+                if (resource_limits_exceeded()) {
+                    SASSERT(!inconsistent());
+                    return l_undef;
+                }
+            }
+
+    }
+
     lbool context::unbounded_search() {
 
 
-          lbool    status            = l_undef;
+          lbool    status            = inconsistent()? l_false: l_undef;
           unsigned curr_lvl          = m_scope_lvl;
           unsigned starting_scope = get_scope_level();
+
           while (status==l_undef) {
               SASSERT(!inconsistent());
-
-              status = bounded_search();
+              if(get_scope_level()<curr_lvl){
+                       	  //then we backtracked past our starting point during search.
+                       	  return l_undef;//give up
+                         }
+              status = forced_search();
               TRACE("search_bug", tout << "status: " << status << ", inconsistent: " << inconsistent() << "\n";);
               TRACE("assigned_literals_per_lvl", display_num_assigned_literals_per_lvl(tout);
                     tout << ", num_assigned: " << m_assigned_literals.size() << "\n";);
@@ -3450,6 +3616,13 @@ namespace smt {
               }
 
               SASSERT(status == l_undef);
+
+              if(get_scope_level()<curr_lvl){
+            	  //then we backtracked past our starting point during search.
+            	  return l_undef;//give up
+              }
+
+
               inc_limits();
               if (force_restart || !m_fparams.m_restart_adaptive || m_agility < m_fparams.m_restart_agility_threshold) {
                   SASSERT(!inconsistent());
@@ -3467,7 +3640,7 @@ namespace smt {
                   m_stats.m_num_restarts++;
                   if (m_scope_lvl > curr_lvl) {
                       pop_scope(m_scope_lvl - curr_lvl);
-                      SASSERT(at_search_level());
+                   //   SASSERT(at_search_level());
                   }
                   ptr_vector<theory>::iterator it  = m_theory_set.begin();
                   ptr_vector<theory>::iterator end = m_theory_set.end();
@@ -3510,7 +3683,7 @@ namespace smt {
     lbool context::bounded_search() {
         SASSERT(!inconsistent());
         unsigned counter = 0;
-        
+        int starting_lvl = get_scope_level();
         TRACE("bounded_search", tout << "starting bounded search...\n";);
         static int iteration=0;
         while (true) {
@@ -3589,6 +3762,7 @@ namespace smt {
             if (m_base_lvl == m_scope_lvl && m_fparams.m_simplify_clauses)
                 simplify_clauses();
             
+
 
             if (!decide()) {
                 final_check_status fcs = final_check();
@@ -3918,7 +4092,10 @@ namespace smt {
                 }
             }
 #endif
-           // dbg_check(num_lits,lits);
+#ifdef Z3_DEBUG_SMS
+            dbg_check(num_lits,lits);
+#endif
+           //
             mk_clause(num_lits, lits, js, CLS_LEARNED);
 
 

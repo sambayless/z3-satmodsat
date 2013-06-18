@@ -37,7 +37,7 @@ namespace smt {
     {
     	init(parent);
     	parent_just= new sat_justification(this);
-
+    	m_flip_assign=false;
     	 m_sms = get_manager().mk_const_decl(symbol("@"),get_manager().mk_bool_sort());
     	// m_sms = get_manager().mk_func_decl(symbol("@"),0,get_manager().mk_bool_sort(), get_manager().mk_bool_sort());
     	// m_sms = get_manager().mk_func_decl(symbol("@"),0,get_manager().mk_bool_sort(), get_manager().mk_bool_sort(),false,false,false);
@@ -60,6 +60,7 @@ namespace smt {
        {
        	init(parent);
        	parent_just= new sat_justification(this);
+    	m_flip_assign=false;
      //   func_decl_info info(id, OP_SMS);
          //      info.set_associative();
           //     info.set_flat_associative();
@@ -116,18 +117,44 @@ namespace smt {
 	       			 }
 	    }
 
+
+
     void theory_sat::propagate(){
     	if(!child_ctx)
     		return;
-    	sync_levels();
 
-    	if((!initial_propagation && !child_ctx->inconsistent()  && child_ctx->m_qhead==child_ctx->m_assigned_literals.size()))
+    	static int it = 0;
+    	int localit = ++it;
+    	if(localit==22){
+    		int a =1;
+    	}
+    	int parent_start_level = get_context().get_scope_level();
+    	//sync_levels();
+     	if(child_ctx->get_scope_level()>popto && popto>=0){
+             child_ctx->pop_scope(child_ctx->get_scope_level()-popto);
+     	}
+     	child_ctx->m_search_lvl=get_context().get_search_level();//is there somewhere else we can do this?
+        if(child_qhead>child_ctx->m_qhead)
+       	 child_qhead=child_ctx->m_qhead;
+        popto=-1;
+        if(child_ctx->get_scope_level()==0){
+        	int a =1;
+        }
+    	if((!initial_propagation && !child_ctx->inconsistent()  && child_ctx->m_qhead==child_ctx->m_assigned_literals.size())){
+#ifdef Z3_DEBUG_SMS
+    	dbg_sync();
+#endif
     		return;
-
+    	}
+#ifdef Z3_DEBUG_SMS
+    	dbg_sync();
+#endif
     	//if you sync levels here, then final check will fail to detect errors...
 
+    	//child_qhead=child_ctx->m_qhead;
+
     	initial_propagation=false;
-    	child_qhead=child_ctx->m_qhead;
+
     	child_ctx->propagate();
     	if(child_ctx->inconsistent() ){
 
@@ -145,8 +172,18 @@ namespace smt {
     	    if(child_ctx->m_not_l.var()==9 && child_ctx->m_not_l.sign()){
     	    	int a =1;
     	    }
-    		child_ctx->m_conflict_resolution->mk_relative_lemma((child_ctx->m_not_l), child_ctx->m_conflict,false, &check_j,this);
+    	    lbool val = child_ctx->m_not_l == null_literal ? l_undef: child_ctx->get_assignment(child_ctx->m_not_l);
+    	    int lev = child_ctx->get_scope_level();
+    	 //   if(child_ctx->m_conflict.get_kind()==b_justification::JUSTIFICATION && child_ctx->m_conflict.get_justification()->get_from_theory() == get_family_id() && ( child_ctx->m_conflict.get_justification()) ){
+    	    if(check_j(child_ctx->m_not_l, child_ctx->m_conflict,this)){
+    	    	child_ctx->m_conflict_resolution->mk_relative_lemma(child_ctx->m_not_l,b_justification::mk_axiom(),true,&check_j,this);
+    	    	//child_ctx->m_conflict_resolution->mk_relative_lemma((child_ctx->m_not_l), child_ctx->m_conflict,true, &check_j,this);
+    	    }else{
 
+    	    	child_ctx->m_conflict_resolution->mk_relative_lemma((child_ctx->m_not_l), child_ctx->m_conflict,false, &check_j,this);
+    	    }
+    	    SASSERT(child_ctx->get_scope_level()==lev);
+    		m_flip_assign=false;
     		tmp_reason.reset();
     		//Translate the clause into the parent's variable space
     		int backtrack_level = 0;int conflict_level =0;
@@ -166,15 +203,14 @@ namespace smt {
 					}
 				}
 
-
-
 				literal p_lit = literal(child_parent_map[ c_lit.var()],c_lit.sign());
 				if(p_lit.var()==null_bool_var){
 					exit(3);
 				}
 
 				SASSERT(p_lit.var()!=null_bool_var);
-
+				//SASSERT(child_ctx->get_assignment(c_lit)==l_false);
+				SASSERT(get_context().get_assignment(p_lit)==l_false);
 				int l = get_context().get_assign_level(p_lit.var());
 				if(l>conflict_level){
 					backtrack_level=conflict_level;
@@ -191,6 +227,13 @@ namespace smt {
 				tmp_reason[0]=tmp_reason[min_l];
 				tmp_reason[min_l]=t;
 			}
+
+		/*	if(m_flip_assign && tmp_reason.size()>0){
+				tmp_reason[0]=~tmp_reason[0];//ugly, ugly hack to catch an edge case.
+			}*/
+
+
+
 #ifdef REPORT
 			std::cout<<"Interface conflict (" << child_ctx->solver_num << ","<< get_context().solver_num << ") at level " << get_context().get_scope_level() << ", backtrack to " <<backtrack_level << " :";// <<  <<"\n";
 			for(int i = 0;i<tmp_reason.size();i++)
@@ -202,6 +245,7 @@ namespace smt {
 #endif
 			//ok, generate a conflict in the super solver using this reason.
 			if(tmp_reason.size()){
+				SASSERT(get_context().get_assignment(tmp_reason[0])==l_false);
 				get_context().mk_clause(tmp_reason.size(), tmp_reason.c_ptr(),0,CLS_AUX_LEMMA);
 				//get_context().assign(tmp_reason[0],new sat_justification(tmp_reason,this));
 			}else{
@@ -237,15 +281,35 @@ namespace smt {
 					std::cout<< child_ctx->solver_num << "(" << local_l << ")" << " to " << get_context().solver_num << "(" << parent_l << ")\n";
 #endif
 #ifdef Z3_DEBUG_SMS
-					get_context().dbg_check_propagation(parent_l);
+					//get_context().dbg_check_propagation(parent_l);
 #endif
-					if(get_context().get_assignment(parent_l) != l_true)
+					int lv = child_ctx->get_assign_level(local_l);
+					if(lv<get_context().get_search_level())
+						lv=get_context().get_search_level();
+					if(get_context().get_assignment(parent_l) != l_true){
+						if(get_context().get_scope_level()>lv){
+							get_context().pop_scope(get_context().get_scope_level()- lv);
+						}
 						get_context().assign(parent_l,get_context().mk_justification( sat_justification(parent_l,this)));
+						if(child_ctx->get_scope_level()>get_context().get_scope_level()){
+									child_ctx->pop_scope(child_ctx->get_scope_level()- get_context().get_scope_level());
+								}
+					}else if (get_context().get_assign_level(parent_l)>lv){
+						//then the parent needs to have propagated this literal earlier than it did.
+						get_context().pop_scope(get_context().get_scope_level()- lv);
+						get_context().assign(parent_l,get_context().mk_justification( sat_justification(parent_l,this)));
+						if(child_ctx->get_scope_level()>get_context().get_scope_level()){
+									child_ctx->pop_scope(child_ctx->get_scope_level()- get_context().get_scope_level());
+						}
+					}
 				}
-
-
 			}
+#ifdef Z3_DEBUG_SMS
+    	dbg_sync(get_context().m_scope_lvl == child_ctx->m_scope_lvl);
+#endif
     	}
+
+    	m_flip_assign=false;
     }
     void theory_sat::push_scope_eh(){
     	if(!child_ctx)
@@ -269,12 +333,12 @@ namespace smt {
 
     void theory_sat::mk_reason_for(literal parent_lit, svector<literal> & reason_out) {
     	SASSERT(parent_lit!=null_literal);
-    	SASSERT(get_context().get_assignment(parent_lit)==l_true);
 
 
 
 
     	literal child_lit = literal(parent_child_map[ parent_lit.var()],parent_lit.sign());
+    	SASSERT(child_ctx->get_assignment(child_lit)==l_true);
 #ifdef REPORT
     	std::cout<<"Construct reason for " << child_lit << ": ";
             	for(int i = 0;i<child_ctx->m_assigned_literals.size();i++){
@@ -302,14 +366,14 @@ namespace smt {
 
     	//reason_out[0]=~reason_out[0];
 #ifdef Z3_DEBUG_SMS
-    	get_context().dbg_check(reason_out);
+    	//get_context().dbg_check(reason_out);
 #endif
     }
 
      void theory_sat::assign_eh(bool_var v, bool is_true){
     	 if(!child_ctx||  !parent_child_map.size())
     	     		return;
-    	 sync_levels();
+
 
 
 
@@ -320,8 +384,14 @@ namespace smt {
 #endif
     	SASSERT(t.var()==v);
     	SASSERT(t.var()!=null_bool_var);
+    	int plev = get_context().get_assign_level(v);
+    	sync_levels(get_context().get_assign_level(v));// get_context().get_assign_level(v));
+    	SASSERT(get_context().get_assign_level(v)==child_ctx->m_scope_lvl);
     	//ok, need to switch this to creating a justification that can be distinguished from true axioms.
     	child_ctx->assign(child_lit ,b_justification(parent_just), false);
+    	if(child_lit.var()==22){
+    		int a=1;
+    	}
     }
 
 	    bool theory_sat::internalize_atom(app * n, bool gate_ctx) {
@@ -344,7 +414,7 @@ namespace smt {
 			//if(v==null_bool_var)
 				v = ctx.mk_bool_var(n);
 #ifdef REPORT
-				std::cout << get_context().solver_num << " internalising atom:\n"<<mk_pp(n, get_context().get_manager()) << " is variable " << v  << "\n";
+			//	std::cout << get_context().solver_num << " internalising atom:\n"<<mk_pp(n, get_context().get_manager()) << " is variable " << v  << "\n";
 				if(get_context().get_assignment(v)!=l_undef){
 					std::cout<<"ALREADY ASSIGNED!\n";
 
@@ -383,7 +453,7 @@ namespace smt {
 
 	        SASSERT(subvar!=null_bool_var);
 #ifdef REPORT
-	        std::cout << get_context().solver_num << " < " << child_ctx->solver_num << " exported from child atom:\n"<<mk_pp(childExp, child_ctx->get_manager()) << " is variable " << subvar  << "\n";
+	      //  std::cout << get_context().solver_num << " < " << child_ctx->solver_num << " exported from child atom:\n"<<mk_pp(childExp, child_ctx->get_manager()) << " is variable " << subvar  << "\n";
 
 	    				if(child_ctx->get_assignment(subvar)!=l_undef){
 	    					std::cout<<"ALREADY ASSIGNED SUBVAR!\n";
@@ -441,6 +511,7 @@ namespace smt {
     	for(int i = 0;i<child_ctx->m_assigned_literals.size();i++){
     		child_ctx->m_assumptions.push_back(l.var());
     	}*/
+    	int start_parent_lvl = get_context().get_scope_level();
     	sync_levels();
     	if(!child_ctx->propagate())
         		return FC_CONTINUE;
@@ -458,20 +529,122 @@ namespace smt {
     	}
     	std::cout<<"\n";
 #endif
+    	SASSERT(child_ctx->m_search_lvl==get_context().get_search_level());
     	int start_search_lvl = child_ctx->m_search_lvl;
-    	child_ctx->m_search_lvl=child_ctx->get_scope_level();
-/*
-    	while(child_ctx->m_base_lvl<child_ctx->get_scope_level()){
-			child_ctx->m_base_scopes.push_back(context::base_scope());
-			context::base_scope & bs              = child_ctx->m_base_scopes.back();
-			bs.m_lemmas_lim              = child_ctx->m_lemmas.size();
-			bs.m_inconsistent            = child_ctx->inconsistent();
-			bs.m_simp_qhead_lim          = child_ctx->m_simp_qhead;
-			child_ctx->m_base_lvl++;
-			child_ctx->m_search_lvl++;
-    	}*/
 
-    	lbool res = (child_ctx->unbounded_search());
+
+    	//child_ctx->m_search_lvl=child_ctx->get_scope_level();
+    	/*lbool val = child_ctx->get_assignment(876);
+    	lbool v2 = get_context().get_assignment(105);
+    	bool_var p = child_parent_map[876];*/
+    	lbool res  = (child_ctx->unbounded_search());
+    	//after an unbounded search, need to set child_qhead to the lowest value that was backtracked to.
+    	if(child_ctx->m_scope_lvl>0){
+    		if(child_qhead>child_ctx->m_scopes[child_ctx->m_scope_lvl-1].m_assigned_literals_lim){
+    			child_qhead=child_qhead>child_ctx->m_scopes[child_ctx->m_scope_lvl-1].m_assigned_literals_lim;
+    		}
+    	}else{
+    		child_qhead=0;//repropagate from scratch, to be safe.
+    	}
+
+    	while(res==l_undef){
+
+    		//ok, we may have backtracked past the super-solver's decision level here.
+    		//So go through and re-assert shared literals as needed
+    		//for(int l = child_ctx->get_scope_level()+1;l<get_context().get_scope_level();l++){
+    		propagate();
+    		if(get_context().get_scope_level()<start_parent_lvl)
+				return FC_CONTINUE;
+    		int lv = child_ctx->get_scope_level();
+    		int plv = get_context().get_scope_level();
+    		SASSERT(get_context().m_scopes.size()==get_context().m_scope_lvl);
+    		for(int q = lv==0? 0: get_context().m_scopes[lv-1].m_assigned_literals_lim; q<get_context().m_assigned_literals.size() && !child_ctx->inconsistent() ;q++){
+    			int lv2 = child_ctx->get_scope_level();
+				int plv2 = get_context().get_scope_level();
+
+				literal parent = get_context().m_assigned_literals[q];
+				if(get_context().get_var_theory(parent.var())==get_family_id()){
+					//for each shared variable assignment
+
+					 bool_var v = parent.var(); bool is_true=!parent.sign();
+					literal child_lit = literal(parent_child_map[v],!is_true);
+					literal t = literal(child_parent_map[child_lit.var()],!is_true);
+					int pal = get_context().get_assign_level(parent);
+					while(get_context().get_assign_level(parent)>child_ctx->get_scope_level()){
+						propagate();
+						if(child_ctx->inconsistent()){
+							return FC_CONTINUE;
+						}
+						if(get_context().get_scope_level()<start_parent_lvl)
+							return FC_CONTINUE;
+						if(child_ctx->get_assignment(child_lit)==l_false)
+							break;
+						else if (q> get_context().m_assigned_literals.size() || (get_context().get_assignment(parent)!=l_true))// || ! (get_context().get_assign_level(parent)>child_ctx->get_scope_level()))
+							break;
+
+						child_ctx->push_scope();
+						int clv = child_ctx->get_scope_level();
+					   int plv = get_context().get_scope_level();
+						SASSERT(child_ctx->get_scope_level()<=get_context().get_scope_level());
+					}
+					if(get_context().get_scope_level()<start_parent_lvl)
+												return FC_CONTINUE;
+					 if (q> get_context().m_assigned_literals.size() || (get_context().get_assignment(parent)!=l_true))// || ! (get_context().get_assign_level(parent)>child_ctx->get_scope_level())
+							break;
+
+
+					SASSERT(t.var()==v);
+					SASSERT(t.var()!=null_bool_var);
+					//ok, need to switch this to creating a justification that can be distinguished from true axioms.
+					if(child_ctx->get_assignment(child_lit)==l_false){
+						//m_flip_assign=true;
+						//int a =1;
+#ifdef Z3_DEBUG_SMS
+						get_context().dbg_check_propagation(parent);
+						child_ctx->dbg_check_propagation(~child_lit);
+#endif
+						mk_reason_for(~parent,tmp_reason);
+#ifdef Z3_DEBUG_SMS
+						get_context().dbg_check(tmp_reason);
+#endif
+			//ok, generate a conflict in the super solver using this reason.
+						if(tmp_reason.size()){
+							SASSERT(get_context().get_assignment(tmp_reason[0])==l_false);
+#ifdef Z3_DEBUG_SMS
+		for(int i = 0;i<tmp_reason.size();i++){
+			literal l = tmp_reason[i];
+			SASSERT(get_context().get_assignment(l)==l_false);
+		}
+
+#endif
+							get_context().mk_clause(tmp_reason.size(), tmp_reason.c_ptr(),0,CLS_AUX_LEMMA);
+							//get_context().assign(tmp_reason[0],new sat_justification(tmp_reason,this));
+						}else{
+							get_context().assign(~true_literal,b_justification::mk_axiom());
+						}
+					return  FC_CONTINUE;
+					}else
+						child_ctx->assign(child_lit ,b_justification(parent_just), false);
+
+				}
+			}
+    		propagate();
+    		if(get_context().get_scope_level()<start_parent_lvl)
+    			return FC_CONTINUE;
+    		if(child_ctx->inconsistent()){
+    			return FC_CONTINUE;
+    		}
+    		res= (child_ctx->unbounded_search());
+    	 	if(child_ctx->m_scope_lvl>0){
+    	    		if(child_qhead>child_ctx->m_scopes[child_ctx->m_scope_lvl-1].m_assigned_literals_lim){
+    	    			child_qhead=child_qhead>child_ctx->m_scopes[child_ctx->m_scope_lvl-1].m_assigned_literals_lim;
+    	    		}
+    	    	}else{
+    	    		child_qhead=0;//repropagate from scratch, to be safe.
+    	    	}
+
+    	}
+
 #ifdef REPORT
     	std::cout<<"Post Search: ";
     	for(int i = 0;i<child_ctx->m_assigned_literals.size();i++){
