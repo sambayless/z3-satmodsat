@@ -90,7 +90,9 @@ namespace smt {
         SASSERT(m_scope_lvl == 0);
         SASSERT(m_base_lvl == 0);
         SASSERT(m_search_lvl == 0);
-
+        local_qhead=0;
+        parent_qhead=0;
+        track_min_level=0;
         m_case_split_queue = mk_case_split_queue(*this, p);
 #ifdef Z3_DEBUG_SMS
         dbg_solver=0;
@@ -178,13 +180,11 @@ namespace smt {
     
     void context::assign_core(literal l, b_justification j, bool decision) {
     	int lv = l.var();
-    	if((l.var()==5 )  ){
+    	if((l.var()==12 )  ){
     		int a =1;
     	}
 
-#ifdef REPORT
-    	//std::cout<< solver_num << " Assign " << l  << " (" << l.var() << ", " << l.sign()<< ")" <<  " " << mk_pp(get_b_internalized(l.var()), m_manager) << "\n";
-#endif
+
 
         TRACE("assign_core", tout << "assigning: " << l << " "; display_literal(tout, l); tout << "\n";);
         SASSERT(l.var() < static_cast<int>(m_b_internalized_stack.size()));
@@ -209,12 +209,28 @@ namespace smt {
             trace_assign(l, j, decision);
         m_case_split_queue->assign_lit_eh(l);
 #endif
+#ifdef REPORT
+        if(solver_num>0){
+    	std::cout<<"Trace " << solver_num << ": ";
+
+				for(int i = 0;i<m_assigned_literals.size();i++){
+						literal l = m_assigned_literals[i];
+						int lev = get_assign_level(l);
+						std::cout<<  l << "=" <<getGate(l) << "(L" << lev << ") ";// << mk_pp(bool_var2expr(l.var()), get_manager());
+					}
+					std::cout<<"\n";
+
+    	std::cout<< solver_num << " Assign " << l  << " (" << l.var() << ", " << l.sign()<< ")" << " at level " << get_scope_level() << "\n";// <<  " " << mk_pp(get_b_internalized(l.var()), m_manager) << "\n";
+        }
+#endif
 #ifdef Z3_DEBUG_SMS
     	//if(j.get_kind()!=b_justification::AXIOM)
     //		dbg_check_propagation(l);
-    /*	if(m_scope_lvl==0){
-    		dbg_check_unit(l);
-    	}*/
+    	if(m_scope_lvl==0){
+    	//	if(j.get_kind()!=b_justification::AXIOM)
+    	//		dbg_check_propagation(l);
+    	//	dbg_check_unit(l);
+    	}
 #endif
     }
     
@@ -2269,7 +2285,11 @@ namespace smt {
         SASSERT(m_scopes.size() == m_scope_lvl);
 
         unsigned new_lvl    = m_scope_lvl - num_scopes;
-        
+#ifdef Z3_DEBUG_SMS
+        if(get_theory(m_manager.get_family_id("satmodsat")) &&  ((theory_sat*) get_theory(m_manager.get_family_id("satmodsat")))->child_ctx && new_lvl< m_search_lvl){
+        	SASSERT(false);
+        }
+#endif
         cache_generation(new_lvl);
         m_qmanager->pop(num_scopes);
         m_case_split_queue->pop_scope(num_scopes);
@@ -2326,6 +2346,14 @@ namespace smt {
             m_search_lvl    = new_lvl; // Remark: not really necessary
         }
 
+        if(local_qhead>m_qhead){
+        	local_qhead=m_qhead;
+         }
+
+		if(get_scope_level()<track_min_level){
+			track_min_level=get_scope_level();
+		}
+
         unsigned num_bool_vars = get_num_bool_vars();
         // any variable >= num_bool_vars was deleted during backtracking.
         reinit_clauses(num_scopes, num_bool_vars);
@@ -2354,31 +2382,42 @@ namespace smt {
 
 
     void context::dbg_check_propagation(literal p){
+    	return;
     	if(!dbg_solver)
 			return;
-    	if(get_assign_level(p)<=1){
-    		return;//skip this for now, because we aren't handling assumptions properly
+
+
+    	b_justification j = get_justification(p.var());
+    	if(j.get_kind()==b_justification::JUSTIFICATION){
+    		justification *js = j.get_justification();
+    		theory_sat::sat_justification *jsat = (theory_sat::sat_justification*) js;
+    		if(jsat->fromParentTheory())
+    			return;
     	}
+
+
     	 theory_sat * theory =(theory_sat*) get_theory(m_manager.get_family_id("satmodsat"));
     	svector<expr*> dbg_clause;
+    	if(get_assign_level(p)>0){
     	for(int i = 0;i<m_assigned_literals.size();i++){
 
     		bool_var v=m_assigned_literals[i].var();
     		if(v==p.var())
     			continue;
     		//if(get_var_theory(v)==theory->get_family_id()){
-    		if (get_justification(v).get_kind()==b_justification::AXIOM){
+    		//if (get_justification(v).get_kind()==b_justification::AXIOM){
 
     		expr* e = get_b_internalized(v);
-    		if(!dbg_map.contains(e))
+    		if(!dbg_map.contains(e)){
     			continue;
+    		}
 			expr * d = dbg_map.find(e);
 			expr* de = m_assigned_literals[i].sign()? dbg_solver->get_manager().mk_not(d):d;
 			dbg_clause.push_back(de);
 
-    		}
+    		//}
     	}
-
+    	}
     	{
     		bool_var v=p.var();
 			//SASSERT(get_var_theory(v)==theory->get_family_id());
@@ -2402,9 +2441,10 @@ namespace smt {
 		if(s!=l_false){
 
 			b_justification j = get_justification(p.var());
+
 			if(j.get_kind()==b_justification::CLAUSE){
 				clause * c = j.get_clause();
-
+				if(c){
 				svector<literal> cls;
 				for(int i = 0;i<c->get_num_literals();i++){
 					literal l = c->get_literal(i);
@@ -2421,6 +2461,25 @@ namespace smt {
 					}
 
 				}
+				}
+				int a =1;
+			}else if (j.get_kind()==b_justification::BIN_CLAUSE){
+				literal other = j.get_literal();
+
+				svector<literal> cls;
+
+					cls.push_back(p);
+					SASSERT(get_assignment(other)==l_true);
+					cls.push_back(~other);
+
+					dbg_check(cls);
+					dbg_check_propagation(other);
+
+
+
+
+
+
 			}
 
 			exit(3);
@@ -2434,6 +2493,7 @@ namespace smt {
     }
 
     void context::dbg_check(svector<literal> &clause){
+    	return;
     	if(!dbg_solver)
     		return;
     	svector<expr*> dbg_clause;
@@ -2474,6 +2534,7 @@ namespace smt {
 #endif
     void context::attach(context * subSolver){
     	 theory_sat * s =(theory_sat*) get_theory(m_manager.get_family_id("satmodsat"));
+    	 subSolver->pop_to_base_lvl();
     	 s->attach(subSolver);
     	 solver_num=subSolver->solver_num+1;
 
@@ -2491,35 +2552,118 @@ namespace smt {
     expr* context::export_expr(expr * to_export, context* from){
     	//if(!get_manager().is_bool(to_export))
     	//	SASSERT(false);
+
+    	if(from->get_manager().is_bool(to_export)){
+
     	//sort * b = m_manager.mk_bool_sort();
     	//func_decl* f = m_manager.mk_fresh_func_decl(1, &b, m_manager.mk_bool_sort()); //("satmodsat",1,m_manager.mk_bool_sort(),1);
     	 theory_sat * s =(theory_sat*) get_theory(m_manager.get_family_id("satmodsat"));
     	//app* e = m_manager.mk_fresh_const(0, m_manager.mk_bool_sort());
     	//m_manager.inc_ref(e);
-
+    	 expr * original = to_export;
+    	 bool negated = from->m_manager.is_not(to_export);
+    	 if(negated){
+    		 to_export = to_app(to_export)->get_arg(0);
+    	 }
+    	// SASSERT(! from->m_manager.is_not(to_export));
+    	 expr * fexp;
 #ifdef REPORT
-    //	 std::cout<<"Exported " <<  mk_pp(to_export, from->get_manager()) << " from " << from->solver_num << " to "  <<  solver_num  << "\n";
+    	// std::cout<<"Exported " <<  mk_pp(to_export, from->get_manager()) << " from " << from->solver_num << " to "  <<  solver_num  << "\n";
 #endif
     	 if(s->isExported(to_export,from)){
-    		 return s->getExported(to_export,from);
+    		 fexp = s->getExported(to_export,from);
+    	 }else{
+
+
+
+    	  fexp=m_manager.mk_app(m_manager.get_family_id("satmodsat"),s->export_expr(to_export,from));
+    	 s->setExported(fexp,to_export, from);
+ 	    get_manager().inc_ref(fexp);
+
+    //	m_manager.inc_ref(fexp);
+
+    	mark_as_relevant(fexp);
     	 }
 
-
-
-    	 app * fexp=m_manager.mk_app(m_manager.get_family_id("satmodsat"),s->export_expr(to_export,from));
-    	 s->setExported(fexp,to_export, from);
+    	if(negated){
+    		expr * ne =  m_manager.mk_not(fexp);
+    		get_manager().inc_ref(ne);
+    		mark_as_relevant(ne);
+    		//then return the negation of fexp
+#ifdef Z3_DEBUG_SMS
+    	 dbg_map.insert(ne,dbg_map.find(original));
+#endif
+    		return ne;
+    	}
 #ifdef Z3_DEBUG_SMS
     	 dbg_map.insert(fexp,dbg_map.find(to_export));
 #endif
+    	return fexp;
+    	}else if (from->get_manager().get_sort(to_export)->get_family_id()==from->get_manager().get_family_id("bv")){
 
-    	m_manager.inc_ref(fexp);
+    	    	 theory_sat * s =(theory_sat*) get_theory(m_manager.get_family_id("satmodsat"));
 
-    	mark_as_relevant(fexp);
+    	    	 expr * original = to_export;
+    	    	 expr * fexp=NULL;
+
+    	    	 if(s->isExported(to_export,from)){
+    	    		 fexp = s->getExported(to_export,from);
+    	    	 }else{
+    	    		 bv_util bv(from->get_manager());
+    	    		 //ok, create bit_width bools...
+    	    		 int bit_width = bv.get_bv_size(to_export);
+    	    		 expr * exported [bit_width];
+    	    		 for(int i = 0;i<bit_width;i++){
+    	    			 expr* export_bit = bv.mk_extract(i,i,to_export);
+    	    			 SASSERT(bv.get_bv_size(export_bit)==1);
+    	    			 //ok, now we need a bool that is equal to this bitvector.
+    	    			 expr * export_bool = from->get_manager().mk_fresh_const("exportbool",from->get_manager().mk_bool_sort());
+
+    	    			 //Because export bool will have satmodsat as its theory, we need to make a copy of it to
+    	    			// expr * copy_bool = from->get_manager().mk_const(symbol("export_copy"),from->get_manager().mk_bool_sort());
+    	    			// from->assert_expr(from->get_manager().mk_eq(export_bool,export_bool));
+    	    			 from->assert_expr( from->get_manager().mk_eq(export_bit, bv.mk_bv(1,&export_bool)));
+
+    	    			 expr * exported_bool =m_manager.mk_app(m_manager.get_family_id("satmodsat"),s->export_expr(export_bool,from));
+    	    			 //Need to create a second boolean variable here, because exported can't be associated with both the satmodsat theory and the bitvector theory
+    	    			 expr* copy_bool = get_manager().mk_fresh_const("exportcpy",get_manager().mk_bool_sort());
+    	    			 assert_expr(get_manager().mk_eq(exported_bool,copy_bool));
+    	    			 exported[i] = copy_bool;
+#ifdef Z3_DEBUG_SMS
+			 bv_util dbg_bv(dbg_solver->get_manager());
+
+		 expr * dbg_bitvec = dbg_map.find(to_export);
+		 expr* dbg_bit = dbg_bv.mk_extract(i,i,dbg_bitvec);
+		 expr* dbg_cpy_bool = dbg_solver->get_manager().mk_fresh_const("cpy_dbg_bit",dbg_solver->get_manager().mk_bool_sort());
+		 expr * dbg_copy_bit= dbg_bv.mk_bv(1,&dbg_cpy_bool);
+		 dbg_solver->assert_expr( dbg_solver->get_manager().mk_eq(dbg_copy_bit,dbg_bit));
+    	 dbg_map.insert(copy_bool,dbg_cpy_bool);
+    	 dbg_map.insert(exported_bool,dbg_cpy_bool);
+
+
+#endif
+    	    		 }
+
+    	    		 bv_util outbv(m_manager);
+    	    		 fexp = outbv.mk_bv(bit_width,exported);
+    	    		 s->setExported(fexp,to_export, from);
+    	    		 m_manager.inc_ref(fexp);
+    	    		 mark_as_relevant(fexp);
+
+    	    	 }
+
+
+    	#ifdef Z3_DEBUG_SMS
+    	    	 dbg_map.insert(fexp,dbg_map.find(to_export));
+    	#endif
+    	    	return fexp;
 
 
 
-
-    	  return fexp;
+    	}else{
+    		std::cerr<<"Cannot yet export sort " << from->get_manager().get_sort(to_export) <<"\n";
+    		exit(1);
+    	}
     }
 
     /**
@@ -3107,6 +3251,7 @@ namespace smt {
             }
         }
         reset_assumptions();
+        m_search_lvl= m_base_lvl;//SAM: ADDED THIS TEMPORARILY FOR DEBUGGING
         pop_to_base_lvl(); // undo the push_scope() performed by init_assumptions
         m_search_lvl = m_base_lvl;
         std::sort(m_unsat_core.c_ptr(), m_unsat_core.c_ptr() + m_unsat_core.size(), ast_lt_proc());
@@ -3223,7 +3368,81 @@ namespace smt {
             (*it)->setup();
     }
 
+    lbool context::check_fast(unsigned num_assumptions, expr * const * assumptions, bool reset_cancel) {
+
+        m_stats.m_num_checks++;
+        TRACE("check_bug", tout << "STARTING check(num_assumptions, assumptions)\n";
+              tout << "inconsistent: " << inconsistent() << ", m_unsat_core.empty(): " << m_unsat_core.empty() << "\n";
+              m_asserted_formulas.display(tout);
+              tout << "-----------------------\n";
+              display(tout););
+        if (!m_unsat_core.empty())
+            m_unsat_core.reset();
+        if (!check_preamble(reset_cancel))
+            return l_undef;
+        if (!validate_assumptions(num_assumptions, assumptions))
+            return l_undef;
+        TRACE("check_bug", tout << "inconsistent: " << inconsistent() << ", m_unsat_core.empty(): " << m_unsat_core.empty() << "\n";);
+        TRACE("unsat_core_bug", for (unsigned i = 0; i < num_assumptions; i++) { tout << mk_pp(assumptions[i], m_manager) << "\n";});
+        pop_to_base_lvl();
+        TRACE("before_search", display(tout););
+        SASSERT(at_base_level());
+        lbool r = l_undef;
+        if (inconsistent()) {
+            r = l_false;
+        }
+        else {
+            setup_context(false);
+            internalize_assertions();
+        	init_search();
+            TRACE("after_internalize_assertions", display(tout););
+            if (m_asserted_formulas.inconsistent()) {
+                r = l_false;
+            }
+            else {
+            	while(r==l_undef){
+
+					for (unsigned i = get_scope_level(); i < num_assumptions && ! inconsistent(); i++) {
+						propagate(); // we must give a chance to the theories to propagate before we create a new scope...
+						push_scope();
+						expr * curr_assumption = assumptions[i];
+						SASSERT(is_valid_assumption(m_manager, curr_assumption));
+						internalize(curr_assumption,true);
+						literal l = get_literal(curr_assumption);
+#ifdef REPORT
+						std::cout<<"Assume " << l <<"\n";
+#endif
+						SASSERT(is_relevant(l));
+						TRACE("assumptions", tout << mk_pp(curr_assumption, m_manager) << "\n";);
+
+						assign(l, b_justification::mk_axiom());
+
+					//	get_bdata(l.var()).m_assumption = true;
+					}
+
+
+
+					TRACE("after_internalization", display(tout););
+					if (inconsistent()) {
+						bool res = resolve_conflict(); // build the proof
+						SASSERT(!res);
+						//mk_unsat_core();
+						r = l_false;
+					}
+					else {
+						r = unbounded_search();
+						if (r == l_false)
+							mk_unsat_core();
+					}
+            	}
+            }
+        }
+
+        check_finalize(r);
+        return r;
+    }
     lbool context::check(unsigned num_assumptions, expr * const * assumptions, bool reset_cancel) {
+
         m_stats.m_num_checks++;
         TRACE("check_bug", tout << "STARTING check(num_assumptions, assumptions)\n";
               tout << "inconsistent: " << inconsistent() << ", m_unsat_core.empty(): " << m_unsat_core.empty() << "\n";
@@ -3268,6 +3487,8 @@ namespace smt {
                 }
             }
         }
+        if(r==l_true)
+        	   SASSERT(m_base_lvl>0 || get_search_level()==num_assumptions);
         check_finalize(r);
         return r;
     }
@@ -3483,7 +3704,8 @@ namespace smt {
 
                     {
     #ifdef REPORT
-                       	std::cout<<"Conflict: ";
+                       	std::cout<<"Trace " << solver_num << ": ";
+                        theory_sat * s =(theory_sat*) get_theory(m_manager.get_family_id("satmodsat"));
     					for(int i = 0;i<m_assigned_literals.size();i++){
     							literal l = m_assigned_literals[i];
     							int lev = get_assign_level(l);
@@ -3571,14 +3793,17 @@ namespace smt {
           lbool    status            = inconsistent()? l_false: l_undef;
           unsigned curr_lvl          = m_scope_lvl;
           unsigned starting_scope = get_scope_level();
-
+          int start_trackmin = track_min_level;
           while (status==l_undef) {
               SASSERT(!inconsistent());
               if(get_scope_level()<curr_lvl){
                        	  //then we backtracked past our starting point during search.
+            	  SASSERT(track_min_level<=start_trackmin);
                        	  return l_undef;//give up
                          }
+              SASSERT(track_min_level<=start_trackmin);
               status = forced_search();
+              SASSERT(track_min_level<=start_trackmin);
               TRACE("search_bug", tout << "status: " << status << ", inconsistent: " << inconsistent() << "\n";);
               TRACE("assigned_literals_per_lvl", display_num_assigned_literals_per_lvl(tout);
                     tout << ", num_assigned: " << m_assigned_literals.size() << "\n";);
@@ -3597,8 +3822,15 @@ namespace smt {
                   break;
               }
               else if (status == l_true) {
+            	  if(get_scope_level()<curr_lvl){
+            	              	  //then we backtracked past our starting point during search.
+            		  SASSERT(track_min_level<=start_trackmin);
+            	              	  return l_undef;//give up
+            	                }
+
                   SASSERT(!inconsistent());
-                  mk_proto_model(l_true);
+                  return l_true;
+                 /* mk_proto_model(l_true);
                   // possible outcomes   DONE l_true, DONE l_undef, CONTINUE
                   quantifier_manager::check_model_result cmr = m_qmanager->check_model(m_proto_model.get(), m_model_generator->get_root2value());
                   if (cmr == quantifier_manager::SAT) {
@@ -3610,17 +3842,18 @@ namespace smt {
                       m_last_search_failure = QUANTIFIERS;
                       status                = l_undef;
                       break;
-                  }
-                  status        = l_undef;
-                  force_restart = true;
+                  }*/
+                 //status        = l_undef;
+                 // force_restart = true;
               }
 
               SASSERT(status == l_undef);
 
               if(get_scope_level()<curr_lvl){
-            	  //then we backtracked past our starting point during search.
-            	  return l_undef;//give up
-              }
+                          	  //then we backtracked past our starting point during search.
+            	  SASSERT(track_min_level<=start_trackmin);
+                          	  return l_undef;//give up
+                            }
 
 
               inc_limits();
@@ -3663,7 +3896,7 @@ namespace smt {
                 for (unsigned i = 0; i < sz; i++) {
                     tout << mk_pp(guessed_lits.get(i), m_manager) << "\n";
                 });
-
+          SASSERT(track_min_level<=start_trackmin);
           return status;
       }
     void context::tick(unsigned & counter) const {
@@ -3705,7 +3938,7 @@ namespace smt {
 
                 {
 #ifdef REPORT
-                   	std::cout<<"Conflict: ";
+                   /*	std::cout<<"Trace " << solver_num << "";
 					for(int i = 0;i<m_assigned_literals.size();i++){
 							literal l = m_assigned_literals[i];
 							int lev = get_assign_level(l);
@@ -3720,7 +3953,7 @@ namespace smt {
 						justification * j = m_conflict.get_justification();
 						std::cout<<j;
 					}
-					std::cout<<"\n";
+					std::cout<<"\n";*/
 #endif
                 }
 
@@ -3967,7 +4200,7 @@ namespace smt {
             if (m_conflict_resolution->get_lemma_intern_lvl() > new_lvl)
                 cache_generation(num_lits, lits, new_lvl);
 
-            SASSERT(new_lvl < m_scope_lvl);
+            SASSERT(new_lvl <= m_scope_lvl);
             TRACE("resolve_conflict_bug", 
                   tout << "m_scope_lvl: " << m_scope_lvl << ", new_lvl: " << new_lvl << ", lemma_intern_lvl: " << m_conflict_resolution->get_lemma_intern_lvl() << "\n";
                   tout << "num_lits: " << num_lits << "\n";
@@ -4010,7 +4243,12 @@ namespace smt {
             // I invoke pop_scope_core instead of pop_scope because I don't want
             // to reset cached generations... I need them to rebuild the literals
             // of the new conflict clause.
-            unsigned num_bool_vars = pop_scope_core(m_scope_lvl - new_lvl);
+            unsigned num_bool_vars;
+            if(new_lvl<m_scope_lvl){
+            	num_bool_vars=pop_scope_core(m_scope_lvl - new_lvl);
+
+            }else
+            	num_bool_vars=0;
             SASSERT(m_scope_lvl == new_lvl);
             // the logical context may still be in conflict after
             // clauses are reinitialized in pop_scope.
@@ -4059,7 +4297,9 @@ namespace smt {
                 literal l = lits[i];
                 if (m_manager.is_not(expr_lits.get(i))) {
                     // the sign must have flipped when internalizing
+                	expr * act = expr_lits.get(i);
                     expr * real_atom = to_app(expr_lits.get(i))->get_arg(0);
+                    expr * expect =  bool_var2expr(l.var());
                     SASSERT(real_atom == bool_var2expr(l.var()));
                     SASSERT(expr_signs[i]    != l.sign());
                 }
@@ -4068,6 +4308,9 @@ namespace smt {
                     SASSERT(expr_signs[i]    == l.sign());
                 }
             }
+#endif
+#ifdef Z3_DEBUG_SMS
+            //dbg_check(num_lits, lits);
 #endif
             justification * js = 0;
             if (m_manager.proofs_enabled()) {
@@ -4093,7 +4336,7 @@ namespace smt {
             }
 #endif
 #ifdef Z3_DEBUG_SMS
-            dbg_check(num_lits,lits);
+           // dbg_check(num_lits,lits);
 #endif
            //
             mk_clause(num_lits, lits, js, CLS_LEARNED);
@@ -4122,7 +4365,7 @@ namespace smt {
                   tout << "\n";);
             decay_bvar_activity();
             update_phase_cache_counter();
-            return true;
+            return !inconsistent();
         }
         else if (m_manager.proofs_enabled()) {
             m_unsat_proof = m_conflict_resolution->get_lemma_proof();

@@ -134,6 +134,12 @@ namespace smt {
         };
         svector<new_th_eq>          m_th_eq_propagation_queue;
         svector<new_th_eq>          m_th_diseq_propagation_queue;
+
+        int local_qhead;
+        int parent_qhead;
+        int track_min_level;
+
+
 #ifdef Z3DEBUG
         svector<new_th_eq>          m_propagated_th_eqs;
         svector<new_th_eq>          m_propagated_th_diseqs;
@@ -165,7 +171,32 @@ public:
 
         context* dbg_solver;
         ptr_addr_map<expr,expr*> dbg_map;
+        ptr_addr_map<expr,int> dbg_gate_map;
+        int getGate(expr* e){
+        	if(dbg_gate_map.contains(e)){
+        		return dbg_gate_map.find(e);
+        	}else if (get_manager().is_not(e)){
+        		expr * ex = to_app(e)->get_arg(0);
+        		if(dbg_gate_map.contains(e)){
+					return -dbg_gate_map.find(e);
+        		}else{
+        			return -1;
+        		}
+        	}else if (dbg_gate_map.contains(get_manager().mk_not(e))) {
+        		return -dbg_gate_map.find(get_manager().mk_not(e));
+        	}
+        	else{
+        		return -1;
+        	}
+        }
+        int getGate(literal l){
+                	bool_var v = l.var();
+                	expr * e = get_b_internalized(v);
+                	return getGate(e);
+
+                }
 #endif
+
 protected:
         // -----------------------------------
         //
@@ -1388,6 +1419,9 @@ protected:
 
         lbool check(unsigned num_assumptions = 0, expr * const * assumptions = 0, bool reset_cancel = true);        
         
+        lbool check_fast(unsigned num_assumptions, expr * const * assumptions, bool reset_cancel= true);
+
+
         lbool setup_and_check(bool reset_cancel = true);
         
         // return 'true' if assertions are inconsistent.

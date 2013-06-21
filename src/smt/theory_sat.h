@@ -40,6 +40,8 @@ namespace smt {
     class theory_sat : public theory {
     	svector<literal> tmp_reason;
     public:
+
+
 		    class sat_justification : public justification {
 				theory_sat& outer;
 				//Use this as a marker to identify justificaiton causes that come from the parent theory.
@@ -48,9 +50,9 @@ namespace smt {
 		         clause * clsreason;
 		         int antecedents_size;
 		         literal * antecedents;
-
+		         svector<literal> ants;
 		    public:
-		         sat_justification(svector<literal> & reason, theory_sat * theory):outer(*theory),from_parent_theory(false),m_lit(null_literal),clsreason(0){
+		         sat_justification(svector<literal> & reason, theory_sat * theory):outer(*theory),from_parent_theory(false),m_lit(null_literal),clsreason(0),ants(){
 		        	 antecedents = new literal[reason.size()];
 		        	 antecedents_size = reason.size();
 		        	 for(int i = 0;i<reason.size();i++)
@@ -61,8 +63,8 @@ namespace smt {
 		        		 delete []antecedents;
 		        	 }
 		         }
-		         sat_justification(literal l, theory_sat * theory ):outer(*theory), m_lit(l),clsreason(0),from_parent_theory(false),antecedents_size(0),antecedents(0){SASSERT(m_lit!=null_literal);}
-		         sat_justification( theory_sat * theory ):outer(*theory), m_lit(null_literal),clsreason(0),from_parent_theory(true),antecedents_size(0),antecedents(0){;}
+		         sat_justification(literal l, theory_sat * theory ):outer(*theory), m_lit(l),clsreason(0),from_parent_theory(false),antecedents_size(0),antecedents(0),ants(){SASSERT(m_lit!=null_literal);}
+		         sat_justification( theory_sat * theory ):outer(*theory), m_lit(null_literal),clsreason(0),from_parent_theory(true),antecedents_size(0),antecedents(0),ants(){;}
 		          proof* mk_proof(smt::conflict_resolution&){return NULL;};
 		          bool fromParentTheory(){
 		        	  return from_parent_theory;
@@ -76,41 +78,7 @@ namespace smt {
 		        		return;//no causes at all
 		        	}
 
-		        	/*if(!antecedents){
-
-		        		outer.mk_reason_for(m_lit ,outer.tmp_reason);
-
-						//Now, construct this clause so we don't need to do this again.
-						 //ctx.assign(l, ctx.mk_justification(theory_propagation_justification(get_id(), ctx.get_region(), antecedents.size(), antecedents.c_ptr(), l)));
-						SASSERT(outer.tmp_reason.size()>0);
-						//if(outer.tmp_reason.size()>2){
-							//I would like to create a clause at this point, but it seems Z3 doesn't support doing this.
-							//So, what I will do instead is store the antecedents in a vector, and add that vector to a list to be processed at some point in the future when it is indeed safe to add clauses to Z3.
-							//clsreason = outer.get_context().mk_clause(outer.tmp_reason.size(), outer.tmp_reason.c_ptr(),0,CLS_AUX_LEMMA);
-						//}
-
-						//clause * c = outer.child_ctx->mk_clause(outer.tmp_reason.size(), outer.tmp_reason.c_ptr(),b_justification::mk_axiom(), CLS_LEARNED);
-
-						//update the reason for this assignment in the parent context
-					//	outer.m_context->get_bdata(m_lit.var()).m_justification=outer.m_context->mk_justification(theory_propagation_justification(outer.get_id(), outer.m_context->get_region(), c->size(), c, m_lit)));
-						SASSERT(outer.tmp_reason[0].var()==m_lit.var());
-						literal first = outer.tmp_reason[0];
-						for(int i =  outer.get_context().get_assignment(first)==l_true ? 1:0;i<outer.tmp_reason.size();i++){
-							literal l = outer.tmp_reason[i];
-							SASSERT(outer.get_context().get_assignment(l)==l_false);
-							cr.mark_literal(~l);
-						}
-
-						antecedents = new literal[outer.tmp_reason.size()];
-						for(int i = 0;i<outer.tmp_reason.size();i++)
-							antecedents[i]=outer.tmp_reason[i];
-						antecedents_size= outer.tmp_reason.size();
-
-						outer.to_create.push_back(std::pair(antecedents_size, antecedents));
-
-		        	}*/
-
-		        	if(antecedents){
+		        /*	if(antecedents){
 		        		literal first = antecedents[0];
 
 						for(int i = outer.get_context().get_assignment(first)==l_true ? 1:0 ;i<antecedents_size;i++){
@@ -120,17 +88,28 @@ namespace smt {
 							cr.mark_literal(~l);
 						}
 		        		return;
-		        	}
+		        	}*/
+		        	if(ants.size()){
+						for(int i = 0;i< ants.size();i++){
+							literal l = ants[i];
 
+							if(l!=m_lit){
+								SASSERT(outer.get_context().get_assignment(l)==l_false);
+								cr.mark_literal(~l);
+							}else{
+								SASSERT(outer.get_context().get_assignment(l)==l_true);
+							}
+						}
+						return;
+		        	}
 		    		outer.mk_reason_for(m_lit ,outer.tmp_reason);
 
 					//Now, construct this clause so we don't need to do this again.
 					 //ctx.assign(l, ctx.mk_justification(theory_propagation_justification(get_id(), ctx.get_region(), antecedents.size(), antecedents.c_ptr(), l)));
-					SASSERT(outer.tmp_reason.size()>0);
+					/*SASSERT(outer.tmp_reason.size()>0);
 					if(outer.tmp_reason.size()>2){
 						//I would like to create a clause at this point, but it seems Z3 doesn't support doing this.
-						//So, what I will do instead is store the antecedents in a vector, and add that vector to a list to be processed at some point in the future when it is indeed safe to add clauses to Z3.
-					//	clsreason = outer.get_context().mk_clause(outer.tmp_reason.size(), outer.tmp_reason.c_ptr(),0,CLS_LEARNED);
+						//	clsreason = outer.get_context().mk_clause(outer.tmp_reason.size(), outer.tmp_reason.c_ptr(),0,CLS_LEARNED);
 					}
 
 
@@ -144,11 +123,21 @@ namespace smt {
 								cr.mark_literal(~l);
 							}
 						}
-		        	}
+		        	}*/
 		        	SASSERT(outer.tmp_reason[0].var()==m_lit.var());
+		        	clsreason = outer.get_context().mk_clause(outer.tmp_reason.size(), outer.tmp_reason.c_ptr(),0,CLS_AUX_LEMMA);
+
+		        	//antecedents = new literal[outer.tmp_reason.size()];
 					literal first = outer.tmp_reason[0];
 					for(int i = 0;i<outer.tmp_reason.size();i++){
 						literal l = outer.tmp_reason[i];
+						//This is optional - we are storing the reason here in a vector, so that if it is analyzed again,we don't need to redo the analysis.
+						//However, this is a sub-optimal solution. A better option would be to create a new learnt clause and make _that_ the reason for the assignment, replacing this justification altogether
+						//However, Z3 doesn't changing reasons during conflict resolution.
+
+						ants.push_back(l);
+
+						//antecedents[i]= outer.tmp_reason[i];
 						if(l!=m_lit){
 							SASSERT(outer.get_context().get_assignment(l)==l_false);
 							cr.mark_literal(~l);
@@ -156,6 +145,8 @@ namespace smt {
 							SASSERT(outer.get_context().get_assignment(l)==l_true);
 						}
 					}
+
+
 
 
 		        }
@@ -175,8 +166,8 @@ public:
         ptr_addr_map<expr, expr*> exported_functions;
 
         //typedef svector<theory_var> vars;
-        int parent_qhead;
-        int child_qhead;
+
+
 
         //These two maps connect variable ids in the parent and child contexts
          svector<bool_var> parent_child_map;
@@ -209,9 +200,22 @@ public:
             	   bool conflict =child_ctx&&  child_ctx->inconsistent() ;
             	   //But that will lead to a huge recursive call being made at every propagation step.
             	   //So instead, we ensure that there is propagation at the very first step, and afterward assume that if the current solver is up to date, so are the sub solvers
-            	   bool canprop = (child_ctx && (initial_propagation || child_qhead<  child_ctx->m_qhead  || child_ctx->m_qhead!=child_ctx->m_assigned_literals.size()));
+            	   //bool canprop = (child_ctx && (initial_propagation || child_qhead<  child_ctx->m_qhead  || child_ctx->m_qhead!=child_ctx->m_assigned_literals.size()));
             	 //  bool can_prop= child_ctx && (initial_propagation || child_qhead<get_context().m_assigned_literals.size() || child_ctx->m_qhead < child_ctx->m_assigned_literals.size());
-            	   return (child_ctx && (initial_propagation || child_ctx->inconsistent()   || child_ctx->m_qhead!=child_ctx->m_assigned_literals.size()));
+
+            	   if(!child_ctx)
+            		   return false;
+            	   int cnum = get_context().m_assigned_literals.size()  ;
+            	   int childn = child_ctx->m_assigned_literals.size();
+            	   int childh = child_ctx->m_qhead;
+            	   bool canprop = !(!initial_propagation && !child_ctx->inconsistent() && popto<0 && child_ctx->get_scope_level() == get_context().get_scope_level() &&    child_ctx->parent_qhead==get_context().m_assigned_literals.size()   && child_ctx->m_qhead==child_ctx->m_assigned_literals.size());
+            	   if(!canprop){
+            		   dbg_sync();
+            	   }
+            	   return canprop;
+
+
+            	   //  return (child_ctx && (initial_propagation || child_ctx->inconsistent()   || child_ctx->m_qhead!=child_ctx->m_assigned_literals.size()));
                 /*   return child_ctx && (initial_propagation ||
                 		   child_ctx->m_qhead != child_ctx->m_assigned_literals.size() ||
                 		   child_ctx->m_relevancy_propagator->can_propagate() ||
@@ -236,12 +240,16 @@ public:
             	   return  child_parent_map.size()>child_var && child_parent_map[child_var] != null_bool_var;
                }
 
-               void sync_levels(int tolevel=-1){
-            	 /*  if(get_context().get_scope_level()<popto || popto<0){
+               bool sharedWithChild(bool_var parent_var){
+            	   return  parent_child_map.size()>parent_var && parent_child_map[parent_var] != null_bool_var;
+               }
+
+             /*  void sync_levels(int tolevel=-1){
+            	   if(get_context().get_scope_level()<popto || popto<0){
             		   popto = get_context().get_scope_level();
-            	   }*/
-            	     	/*	if(popto>-1 && popto<child_ctx->m_search_lvl && popto < get_context().m_scope_lvl)
-            	    		popto=child_ctx->m_search_lvl;*/
+            	   }
+            	     		if(popto>-1 && popto<child_ctx->m_search_lvl && popto < get_context().m_scope_lvl)
+            	    		popto=child_ctx->m_search_lvl;
             	   if(child_ctx->get_scope_level()> tolevel && tolevel>=0){
             		   if(popto<0 || popto>tolevel)
             			   popto = tolevel;
@@ -258,10 +266,33 @@ public:
                	     		child_ctx->push_scope();
                  	child_ctx->m_search_lvl=get_context().get_search_level();//is there somewhere else we can do this?
 
+               }*/
+
+               void dbg_reasons(){
+#ifdef Z3_DEBUG_SMS
+            	   for(int i = 0;i<get_context().m_assigned_literals.size();i++){
+            		   literal l = get_context().m_assigned_literals[i];
+            		   b_justification j = get_context().get_justification(l.var());
+            		   if(j.get_kind()==b_justification::JUSTIFICATION){
+            			   sat_justification * s = (sat_justification*) j.get_justification();
+            			   if(!s->fromParentTheory()){
+            				   if(l.var()<parent_child_map.size()){
+            				   bool_var v = parent_child_map[l.var()];
+            				   if(v!=null_bool_var){
+								   literal cl = literal(v,l.sign());
+								   SASSERT(child_ctx->get_assignment(cl)==l_true);
+            				   }
+            				   }
+            			   }
+            		   }
+            	   }
+#endif
                }
 
                //check that child context and its parent are properly syncronized
                void dbg_sync(bool exact=false){
+#ifdef Z3_DEBUG_SMS
+            	   dbg_reasons();
             	   if(get_context().inconsistent() || get_context().get_scope_level()==0 || child_ctx->get_scope_level()==0 || child_ctx->inconsistent())
             		   return;
 
@@ -293,7 +324,7 @@ public:
 					   literal childlit = child_ctx->m_assigned_literals[i];
 
 					   bool_var v = childlit.var();
-					  // if(child_parent_map.contains(v)){
+					   if(child_parent_map.size()>v){
 						   bool_var p = child_parent_map[v];
 						   if(p!=null_bool_var){
 							   literal plit = literal(p,childlit.sign());
@@ -312,9 +343,11 @@ public:
 						   }
 
 
-					  // }
+					   }
 
 				   }
+            	   dbg_reasons();
+#endif
                }
 
                 literal_vector  m_tmp_literal_vector;
@@ -356,9 +389,6 @@ public:
                void attach(context * child);
                void dettach(context * child);
 
-               bool decide(){
-
-               }
            };
 };
 

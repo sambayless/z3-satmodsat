@@ -208,8 +208,8 @@ namespace smt {
         void process_antecedent_axiomatic(literal antecedent);
         void process_justification_axiomatic(justification * js);
 
-        void process_antecedent_relative(literal antecedent);
-        void process_justification_relative(justification * js);
+        void process_antecedent_relative(literal antecedent, int & num_marks );
+        void process_justification_relative(justification * js, int & num_marks );
 
         bool initialize_resolve(b_justification conflict, literal not_l, b_justification & js, literal & consequent);
         void finalize_resolve(b_justification conflict, literal not_l);

@@ -33,8 +33,9 @@ Revision History:
 #include"z3_exception.h"
 #include"error_codes.h"
 #include"aig_frontend.h"
+#include"btor_frontend.h"
 
-typedef enum { IN_UNSPECIFIED, IN_SMTLIB, IN_SMTLIB_2, IN_DATALOG, IN_DIMACS, IN_Z3_LOG,IN_AIG } input_kind;
+typedef enum { IN_UNSPECIFIED, IN_SMTLIB, IN_SMTLIB_2, IN_DATALOG, IN_DIMACS, IN_Z3_LOG,IN_AIG,IN_BTOR } input_kind;
 
 std::string         g_aux_input_file;
 char const *        g_input_file          = 0;
@@ -420,6 +421,8 @@ int main(int argc, char ** argv) {
                     g_input_kind = IN_SMTLIB;
                 }else if (strcmp(ext, "aig") == 0) {
                     g_input_kind = IN_AIG;
+                }else if (strcmp(ext, "btor") == 0) {
+                    g_input_kind = IN_BTOR;
                 }
             }
 	}
@@ -442,6 +445,9 @@ int main(int argc, char ** argv) {
             break;
         case IN_AIG:
         	read_aig(g_input_file, *g_front_end_params);
+            break;
+        case IN_BTOR:
+        	read_btor(g_input_file, *g_front_end_params);
             break;
         default:
             UNREACHABLE();

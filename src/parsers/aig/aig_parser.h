@@ -2,7 +2,7 @@
  * aig_parser.h
  *
  *  Created on: Jun 4, 2013
- *      Author: sam
+ *      Author: Sam Bayless
  */
 
 #ifndef AIG_PARSER_H_

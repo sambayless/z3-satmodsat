@@ -365,7 +365,8 @@ namespace smt {
         consequent          = false_literal;
         if (not_l != null_literal)
             consequent      = ~not_l;
-        
+        if(not_l==true_literal)
+        	return false;
         m_conflict_lvl      = get_max_lvl(consequent, js);
 
         TRACE("conflict_bug", 
@@ -529,7 +530,16 @@ namespace smt {
             case b_justification::AXIOM:
                 break;
             case b_justification::JUSTIFICATION:
-                process_justification(js.get_justification(), num_marks);
+				{
+					int old_marks = num_marks;
+					int old_lemma =       m_lemma.size();
+					process_justification(js.get_justification(), num_marks);
+					if(num_marks==old_marks && m_lemma.size()==old_lemma){
+						m_lemma.push_back(~consequent);
+						m_lemma_atoms.push_back(m_ctx.bool_var2expr(consequent.var()));
+						m_ctx.set_mark(consequent.var());
+					}
+				}
                 break;
             default:
                 UNREACHABLE();
@@ -1536,26 +1546,27 @@ namespace smt {
 
 
 
-    void conflict_resolution::process_antecedent_relative(literal antecedent) {
+    void conflict_resolution::process_antecedent_relative(literal antecedent, int & num_marks ) {
           TRACE("conflict", tout << "processing antecedent: "; m_ctx.display_literal(tout, antecedent); tout << "\n";);
           bool_var var = antecedent.var();
           int l = m_ctx.get_assign_level(var);
 
   			if (!m_ctx.is_marked(var)) {
   				m_ctx.set_mark(var);
+  				num_marks++;
   				m_unmark.push_back(var);
   			}
 
       }
 
-      void conflict_resolution::process_justification_relative(justification * js) {
+      void conflict_resolution::process_justification_relative(justification * js, int & num_marks ) {
           literal_vector & antecedents = m_tmp_literal_vector;
           antecedents.reset();
           justification2literals_core(js, antecedents);
           literal_vector::iterator it  = antecedents.begin();
           literal_vector::iterator end = antecedents.end();
           for(; it != end; ++it)
-          	process_antecedent_relative(*it);
+          	process_antecedent_relative(*it,num_marks);
       }
 
       void conflict_resolution::mk_relative_lemma( literal assigned, b_justification conflict, bool unit_prop_reason, bool (*is_relative)(literal l, b_justification&, void *), void * data) {
@@ -1566,6 +1577,7 @@ namespace smt {
      /*        if(assigned==null_literal || assigned==~null_literal){
           	   return;
              }*/
+             int num_marks = 0;
              if(assigned!=null_literal &&  assigned!=~null_literal ){
             	  if(m_ctx.get_assignment(assigned)==l_false){
 						  assigned = ~assigned;
@@ -1587,7 +1599,7 @@ namespace smt {
                    	//   m_axioms.push_back(~assigned);
                      	  lbool val = m_ctx.get_assignment(assigned);
                      	  SASSERT(val==l_true);
-                      	   process_antecedent_relative(assigned);
+                      	   process_antecedent_relative(assigned,num_marks);
                       }
 
              literal consequent  = assigned;
@@ -1611,7 +1623,7 @@ namespace smt {
 
                  if( (*is_relative)(consequent,js,data)){
                 	 SASSERT(m_ctx.get_assignment(consequent)==l_true);
-                	 m_relative.push_back(first? consequent: ~consequent);
+                	 m_relative.push_back((first || js.get_kind()==b_justification::AXIOM)? consequent: ~consequent);
                  }else{
 
 					 switch (js.get_kind()) {
@@ -1625,13 +1637,13 @@ namespace smt {
 								 i = 1;
 							 }
 							 else {
-								 process_antecedent_relative(~cls->get_literal(0));
+								 process_antecedent_relative(~cls->get_literal(0),num_marks);
 								 i = 2;
 							 }
 						 }
 						 for(; i < num_lits; i++) {
 							 literal l = cls->get_literal(i);
-							 process_antecedent_relative(~l);
+							 process_antecedent_relative(~l,num_marks);
 						 }
 						/* justification * js = cls->get_justification();
 						 if (js)
@@ -1640,7 +1652,7 @@ namespace smt {
 					 }
 					 case b_justification::BIN_CLAUSE:
 						 SASSERT(consequent.var() != js.get_literal().var());
-						 process_antecedent_relative(js.get_literal());
+						 process_antecedent_relative(js.get_literal(),num_marks);
 						 break;
 					 case b_justification::AXIOM:
 #ifdef Z3_DEBUG_SMS
@@ -1649,23 +1661,28 @@ namespace smt {
 #endif
 						 break;
 					 case b_justification::JUSTIFICATION:
-						 process_justification_relative(js.get_justification());
+						 process_justification_relative(js.get_justification(),num_marks);
 						 break;
 					 default:
 						 UNREACHABLE();
 					 }
                  }
                  first=false;
-                 int base = m_ctx.get_base_level();
+
                  while (true) {
+                	 if( num_marks==0){
+                		   goto end_relative;
+                	 }
                      if (idx < 0)
                          goto end_relative;
                      literal l = m_assigned_literals[idx];
                      TRACE("unsat_core_bug", tout << "l: " << l << ", get_assign_level(l): " << m_ctx.get_assign_level(l) << ", is_marked(l): " << m_ctx.is_marked(l.var()) << "\n";);
                     /* if (m_ctx.get_assign_level(l) <=base )
                          goto end_relative;*/
-                     if (m_ctx.is_marked(l.var()))
+                     if (m_ctx.is_marked(l.var())){
+                    	 num_marks--;
                          break;
+                     }
                      idx--;
                  }
 

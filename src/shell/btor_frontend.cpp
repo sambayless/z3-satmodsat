@@ -23,7 +23,7 @@ Revision History:
 #include<signal.h>
 
 #include"timeout.h"
-#include"aig/aig_parser.h"
+#include"btor/btor_parser.h"
 
 #include"smt_strategic_solver.h"
 
@@ -32,7 +32,8 @@ Revision History:
 #include "reg_decl_plugins.h"
 #include "ast_pp.h"
 #include "smt_types.h"
-#include "aig_frontend.h"
+#include "btor_frontend.h"
+#include"qfbv_tactic.h"
 extern bool g_display_statistics;
 extern void display_config();
 static clock_t             g_start_time;
@@ -56,18 +57,18 @@ static void on_ctrl_c(int) {
 }
 
 
-unsigned read_aig(char const* file_name, front_end_params& front_end_params) {
+unsigned read_btor(char const* file_name, front_end_params& front_end_params) {
     g_start_time = clock();
     register_on_timeout_proc(on_timeout);
     signal(SIGINT, on_ctrl_c);
     //cmd_context ctx(&front_end_params);
-    ast_manager m;
+    ast_manager * m = new ast_manager();
     front_end_params.m_minimize_lemmas=false;//disabled for now
     front_end_params.m_relevancy_lvl=0;
     front_end_params.m_pre_simplifier=false;
     front_end_params.m_pre_simplify_expr=false;
-    reg_decl_plugins(m);
-    smt::context *ctx = new smt::context(m,front_end_params);
+    reg_decl_plugins(*m);
+
     // temporary hack until strategic_solver is ported to new tactic framework
 
 
@@ -78,6 +79,7 @@ unsigned read_aig(char const* file_name, front_end_params& front_end_params) {
     vector<expr*> outputs;
     vector<expr*> in_latches;
     vector<expr*> out_latches;
+    vector<expr*> asserted;
     vector<expr*> out_latches_prev;
     bool result = true;
     if (file_name) {
@@ -86,11 +88,21 @@ unsigned read_aig(char const* file_name, front_end_params& front_end_params) {
             std::cerr << "(error \"failed to open file '" << file_name << "'\")" << std::endl;
             exit(ERR_OPEN_FILE);
         }
-         parse_aig (in,inputs,outputs,in_latches,out_latches,gates,ctx->get_manager());
+         parse_btor (in,inputs,outputs,in_latches,out_latches,gates,asserted,*m);
     }
     else {
-         parse_aig (std::cin,inputs,outputs,in_latches,out_latches,gates,ctx->get_manager());
+    	parse_btor (std::cin,inputs,outputs,in_latches,out_latches,gates,asserted,*m);
     }
+
+    params_ref params;
+
+   // params * t = mk_qfbv_tactic(m,front_end_params,params);
+    smt::context *ctx = new smt::context(*m,front_end_params,params);
+
+    for(int i =  0;i<asserted.size();i++){
+    	ctx->assert_expr(asserted[i]);
+    }
+
     for(int i =  0;i<out_latches.size();i++){
     	expr * e =  ctx->get_manager().mk_fresh_const("OutLatch",ctx->get_manager().mk_bool_sort());
 	     ctx->assert_expr(ctx->get_manager().mk_eq(out_latches[i],e));
@@ -98,11 +110,11 @@ unsigned read_aig(char const* file_name, front_end_params& front_end_params) {
     }
     //AIG format assumes all in latches start assigned to 0
     for(int i = 0;i<in_latches.size();i++){
-    	ctx->assert_expr(m.mk_not(in_latches[i]));
+    	ctx->assert_expr(m->mk_not(in_latches[i]));
     }
     if(outputs.size()==0)
     	exit(20);
-    expr* any_out = outputs[0];//ctx->get_manager().mk_or(outputs.size(),outputs.c_ptr());
+    expr* any_out = ctx->get_manager().mk_or(outputs.size(),outputs.c_ptr());
    // ctx->push();
    // ctx->assert_expr(any_out);
     expr * property = ctx->get_manager().mk_fresh_const("Property",ctx->get_manager().mk_bool_sort());
@@ -114,6 +126,7 @@ unsigned read_aig(char const* file_name, front_end_params& front_end_params) {
     ctx->dbg_gate_map.insert(any_out, gates.size());
     ctx->dbg_gate_map.insert(property, gates.size());
 #endif
+
         lbool res = ctx->check_fast(1,&property);
 
     ctx->pop_to_base_lvl();
@@ -129,9 +142,9 @@ unsigned read_aig(char const* file_name, front_end_params& front_end_params) {
     		out_latches_prev.reset();
     		out_latches_prev.append(out_latches.size(), out_latches.c_ptr());
 
-    	    ast_manager * m = new ast_manager();
+    	   ast_manager * m = new ast_manager();
     	    reg_decl_plugins(*m);
-    	    smt::context *ctx2 = new smt::context(*m,front_end_params);
+    	    smt::context *ctx2 = new smt::context(*m,front_end_params,params);
     	    ctx2->check();//get rid of this later
     	    ctx2->pop_to_base_lvl();
 
@@ -141,11 +154,14 @@ unsigned read_aig(char const* file_name, front_end_params& front_end_params) {
     	            std::cerr << "(error \"failed to open file '" << file_name << "'\")" << std::endl;
     	            exit(ERR_OPEN_FILE);
     	        }
-    	         parse_aig (in,inputs,outputs,in_latches,out_latches,gates,ctx2->get_manager());
+    	        parse_btor (in,inputs,outputs,in_latches,out_latches,gates,asserted,ctx2->get_manager());
     	    }
     	    else {
-    	         parse_aig (std::cin,inputs,outputs,in_latches,out_latches,gates,ctx2->get_manager());
+    	    	parse_btor (std::cin,inputs,outputs,in_latches,out_latches,asserted,gates,ctx2->get_manager());
     	    }
+    	    for(int i =  0;i<asserted.size();i++){
+    	      	ctx2->assert_expr(asserted[i]);
+    	      }
     	    for(int i =  0;i<out_latches.size();i++){
     	       	expr * e =  ctx2->get_manager().mk_fresh_const("OutLatch",ctx2->get_manager().mk_bool_sort());
     	         ctx2->assert_expr(ctx2->get_manager().mk_eq(out_latches[i],e));
@@ -167,11 +183,16 @@ unsigned read_aig(char const* file_name, front_end_params& front_end_params) {
 			    vector<expr*> dbg_outputs;
 			    vector<expr*> dbg_in_latches;
 			    vector<expr*> dbg_out_latches;
-
+			    vector<expr*> dbg_asserted;
 			    vector<expr*> dbg_gates;
 
 				std::ifstream in(file_name);
-				parse_aig (in,dbg_inputs,dbg_outputs,dbg_in_latches,dbg_out_latches,dbg_gates,dbg_ctx->get_manager());
+				parse_btor (in,dbg_inputs,dbg_outputs,dbg_in_latches,dbg_out_latches,dbg_gates,dbg_asserted,dbg_ctx->get_manager());
+
+				for(int j = 0;j<dbg_asserted.size();j++){
+						dbg_ctx->assert_expr(dbg_asserted[j]);
+					}
+
 				//AIG format assumes all in latches start assigned to 0
 
 				for(int j = 0;j<dbg_in_latches.size();j++){
@@ -183,8 +204,10 @@ unsigned read_aig(char const* file_name, front_end_params& front_end_params) {
 					 dbg_out_latches_prev.reset();
 					 dbg_out_latches_prev.append(dbg_out_latches.size(), dbg_out_latches.c_ptr());
 					 std::ifstream in(file_name);
-					 parse_aig (in,dbg_inputs,dbg_outputs,dbg_in_latches,dbg_out_latches,dbg_gates,dbg_ctx->get_manager());
-
+					 parse_btor (in,dbg_inputs,dbg_outputs,dbg_in_latches,dbg_out_latches,dbg_gates, dbg_asserted,dbg_ctx->get_manager());
+					for(int j = 0;j<dbg_asserted.size();j++){
+						dbg_ctx->assert_expr(dbg_asserted[j]);
+					}
 					 for(int k = 0;k<dbg_in_latches.size();k++){
 						dbg_ctx->assert_expr(dbg_ctx->get_manager().mk_eq(dbg_out_latches_prev[k],dbg_in_latches[k]));
 					}
@@ -232,7 +255,7 @@ unsigned read_aig(char const* file_name, front_end_params& front_end_params) {
 
 
     	    ctx2->attach(ctx);
-    	    expr* any_out = outputs[0];//m->mk_and(outputs.size(),outputs.c_ptr());
+    	    expr* any_out = m->mk_or(outputs.size(),outputs.c_ptr());
     	    for(int i = 0;i<in_latches.size();i++){
     	    	expr* e= ctx2->export_expr(out_latches_prev[i],ctx);
     	    	expr * eq = m->mk_eq(e,in_latches[i]);
