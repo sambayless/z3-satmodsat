@@ -27,20 +27,15 @@ namespace smt {
     theory_sat::theory_sat(family_id id, context * parent):
 
         theory(id),
-        m_name("SubSolver"),
+          child_ctx(NULL),
+        initial_propagation(true),
+        popto(-1)
 
-        child_ctx(NULL),
-        initial_propagation(true),popto(-1)
-        //,
-        //th_trail_stack(*this)
     {
     	init(parent);
     	parent_just= new sat_justification(this);
-    	m_flip_assign=false;
-    	 m_sms = get_manager().mk_const_decl(symbol("@"),get_manager().mk_bool_sort());
-    	// m_sms = get_manager().mk_func_decl(symbol("@"),0,get_manager().mk_bool_sort(), get_manager().mk_bool_sort());
-    	// m_sms = get_manager().mk_func_decl(symbol("@"),0,get_manager().mk_bool_sort(), get_manager().mk_bool_sort(),false,false,false);
 
+    	 m_sms = get_manager().mk_const_decl(symbol("@"),get_manager().mk_bool_sort());
 
     	               get_manager().inc_ref(m_sms);
 
@@ -49,7 +44,7 @@ namespace smt {
     theory_sat::theory_sat( context * parent):
 
            theory(0),
-           m_name("SubSolver"),
+
 
            child_ctx(NULL),
            initial_propagation(true),popto(-1)
@@ -57,25 +52,13 @@ namespace smt {
        {
        	init(parent);
        	parent_just= new sat_justification(this);
-    	m_flip_assign=false;
+
 
    	 m_sms = get_manager().mk_const_decl(symbol("@"),get_manager().mk_bool_sort());
                    get_manager().inc_ref(m_sms);
        }
 
-    void theory_sat::connect(bool_var parent, bool_var c, context* child){
-    	//not supporting multiple children yet...
-    	while(parent_child_map.size()<=parent){
-    		parent_child_map.push_back(null_bool_var);
-    	}
-     	while(child_parent_map.size()<=c){
-     		child_parent_map.push_back(null_bool_var);
-        	}
-     	SASSERT(parent_child_map[parent]==null_bool_var);
-     	SASSERT(child_parent_map[c]==null_bool_var);
-    	parent_child_map[parent]=c;
-    	child_parent_map[c]=parent;
-    }
+
     void theory_sat::attach(context * child){
     	child_ctx=child;
     }
@@ -115,18 +98,12 @@ namespace smt {
 	    }
 
 
-
-    void theory_sat::propagate(){
+	 //Propagate assignments to exported variables from the parent solver into the subsolver, and either generate a conflict in the parent solver, or propagate any assignments new to the exported variables back to the parent solver
+    //This is by far the most complicated part of this code.
+	void theory_sat::propagate(){
     	if(!child_ctx)
     		return;
     	//backtrack as needed
-    	static int it = 0;
-    	    	int localit = ++it;
-    	    	if(localit==8){
-    	    		int a =1;
-    	    	}
-
-
     	 if (popto >=0 &&child_ctx->get_scope_level()>popto){
     		child_ctx->pop_scope(child_ctx->get_scope_level()-popto);
 
@@ -149,6 +126,8 @@ namespace smt {
     	    }
     	 }
     	#endif
+
+    	 //Quick check to avoid entering the propagate function.
     	 if(!can_propagate()){
     		 while(child_ctx->get_scope_level()<get_context().get_scope_level())
     						 	child_ctx->push_scope();
@@ -160,26 +139,15 @@ namespace smt {
  	    	}
 
 
-    	//	if((!initial_propagation && !child_ctx->inconsistent() &&   parent_qhead==get_context().m_assigned_literals.size()   && child_ctx->m_qhead==child_ctx->m_assigned_literals.size())){
-
     		initial_propagation=false;
     		SASSERT(get_context().get_scope_level() >= child_ctx->get_scope_level());
     	 int initial_level=child_ctx->get_scope_level();
     	 child_ctx->track_min_level=initial_level;
     	 child_ctx->propagate();
     		SASSERT(get_context().get_scope_level() >= child_ctx->get_scope_level());
-#ifdef Z3_DEBUG_SMS
-    	 if(!child_ctx->inconsistent() ){
-    	    for(int i = 0;i<child_ctx->parent_qhead;i++){
-    	    	literal parent = get_context().m_assigned_literals[ i];
-				if(get_context().get_var_theory(parent.var())!=get_family_id())
-					continue;
-				bool_var childvar = parent_child_map[parent.var()];
-				SASSERT(child_ctx->get_assignment(literal(childvar,parent.sign()))!=l_undef);
-    	    }
-    	 }
-    	#endif
 
+    		//Ok: Check through the parent solvers assignments and propagate any assignments to exported varaibles.
+    		//child_ctx->parent_qhead records the last position in the _parents_ assignment queue that we previously propagated.
     		while(!child_ctx->inconsistent() && child_ctx->parent_qhead<get_context().m_assigned_literals.size()){
     			literal parent = get_context().m_assigned_literals[ child_ctx->parent_qhead++];
     			if(get_context().get_var_theory(parent.var())!=get_family_id())
@@ -191,8 +159,10 @@ namespace smt {
 
     			int lev = get_context().get_assign_level(parent.var());
     			SASSERT(child_ctx->get_scope_level()<=lev);
-    			while(child_ctx->get_scope_level()<lev){
 
+    			//Now increase the child solver's scope until it matches the parent solvers for this assignment.
+    			//Also, make sure to propagate in the child here and check if this leads to any conflicts.
+    			while(child_ctx->get_scope_level()<lev){
     				//We are going to start a new decision level; make sure the current one is fully propagated first
     				initial_level=child_ctx->get_scope_level();
     				//
@@ -203,16 +173,16 @@ namespace smt {
     				}
     				child_ctx->push_scope();
     			}
+
+
     			SASSERT(child_ctx->get_scope_level()==get_context().get_scope_level());
     			literal child  = literal(childvar, parent.sign());
     			if(child_ctx->get_assignment(child)==l_false){
-    				//goto conflict;
     				mk_reason_for(~parent, tmp_reason);
     				SASSERT(get_context().get_assignment(tmp_reason[0])==l_false);
     				if(tmp_reason.size()){
 						SASSERT(get_context().get_assignment(tmp_reason[0])==l_false);
 						get_context().mk_clause(tmp_reason.size(), tmp_reason.c_ptr(),0,CLS_AUX_LEMMA);
-						//get_context().assign(tmp_reason[0],new sat_justification(tmp_reason,this));
 					}else{
 						get_context().assign(~true_literal,b_justification::mk_axiom());
 					}
@@ -221,14 +191,13 @@ namespace smt {
     			}
     			SASSERT(child_ctx->get_scope_level()==get_context().get_assign_level(parent));
     			child_ctx->assign(child,b_justification(parent_just), false);
-
-
     		}
 
 
     		initial_level=child_ctx->get_scope_level();
     		child_ctx->track_min_level=initial_level;
     		child_ctx->propagate();
+
     		conflict:
     		if(child_ctx->inconsistent()  || child_ctx->get_scope_level()<initial_level){
 				//ok, either we have a conflict, or something has to be propagated earlier than it previously was.
@@ -242,9 +211,6 @@ namespace smt {
 			}
 
     		SASSERT(get_context().get_scope_level() >= child_ctx->get_scope_level());
-    		if(localit==8){
-    		    	    		int a =1;
-    		    	    	}
 
     		if(child_ctx->inconsistent()){
     			if(!get_context().inconsistent()){
@@ -263,7 +229,7 @@ namespace smt {
 					}
 					if(child_ctx->get_assign_level(c_lit)<=child_ctx->get_base_level()){
 						//this is a unit lit
-						if(child_ctx->get_assign_level(c_lit)==l_false){
+						if(child_ctx->get_assignment(c_lit)==l_false){
 							continue;//skip this literal
 						}else{
 
@@ -271,12 +237,8 @@ namespace smt {
 					}
 
 					literal p_lit = literal(child_parent_map[ c_lit.var()],c_lit.sign());
-					if(p_lit.var()==null_bool_var){
-						exit(3);
-					}
-
 					SASSERT(p_lit.var()!=null_bool_var);
-					//SASSERT(child_ctx->get_assignment(c_lit)==l_false);
+
 					SASSERT(get_context().get_assignment(p_lit)==l_false);
 					int l = get_context().get_assign_level(p_lit.var());
 					if(l>conflict_level){
@@ -295,12 +257,6 @@ namespace smt {
 					tmp_reason[min_l]=t;
 				}
 
-#ifdef REPORT
-			std::cout<<"Interface conflict (" << child_ctx->solver_num << ","<< get_context().solver_num << ") at level " << get_context().get_scope_level() << ", backtrack to " <<backtrack_level << " :";// <<  <<"\n";
-			for(int i = 0;i<tmp_reason.size();i++)
-				std::cout << tmp_reason[i] << " ";
-			std::cout<<"\n";
-#endif
 #ifdef Z3_DEBUG_SMS
 			get_context().dbg_check(tmp_reason);
 			for(int i = 0;i<tmp_reason.size();i++){
@@ -321,6 +277,7 @@ namespace smt {
 
     			return ;
     		}else{
+    			//We succesfully propagated from the parent solver to the subsolver without conflict; now check if the subsolver made any assignmnets to the interface variables, and propagate those back up to the parent solver.
     			//find lits to propagate back up to the parent solver
 
     			while(child_ctx->local_qhead < child_ctx->m_assigned_literals.size()){
@@ -391,9 +348,7 @@ namespace smt {
 	    	dbg_sync();
 	    	dbg_reasons();
 	#endif
-	    	if(can_propagate()){
-	    		int a =1;
-	    	}
+
 	    	SASSERT(!can_propagate());
     			return;
     		}
@@ -402,13 +357,15 @@ namespace smt {
     void theory_sat::push_scope_eh(){
     	if(!child_ctx)
     	    		return;
-    	//don't do anything here - instead, sync_levels will lazily syncronize the levels between the child and parent solvers when assignments or propagations occur.
-    /*	while(child_ctx->get_scope_level()<get_context().get_scope_level())
-    		child_ctx->push_scope();*/
+    	//Instead of directly pushing the scope of the subsolver here, we wait until we need to propagate, and push at that time
+
     }
     void theory_sat::pop_scope_eh(unsigned num_scopes){
     	if(!child_ctx)
     	    		return;
+
+    	//Instead of directly popping the scope of the subsolver here, we wait until we need to propagate, and propagate at that time (using 'popto')
+
     	SASSERT(child_ctx->track_min_level<=child_ctx->get_scope_level());
     	int newlev = get_context().get_scope_level()-num_scopes;
     	if(newlev < child_ctx->get_scope_level() && (popto<0 || newlev<popto))
@@ -419,10 +376,7 @@ namespace smt {
     		child_ctx->parent_qhead= std::min(child_ctx->parent_qhead,(int)get_context().m_scopes[child_ctx->track_min_level].m_assigned_literals_lim);//we can do much better than this, but this is at least safe
 
     	}
-    	//if(newlev==get_context().get_search_level() && get_context().get_search_level()>0 )
-    	//	parent_qhead= std::min(parent_qhead,(int)get_context().m_scopes[get_context().get_search_level()-1].m_assigned_literals_lim);//we can do much better than this, but this is at least safe
-    	//if(child_ctx->get_scope_level()>newlev)
-    	//	child_ctx->pop_scope(child_ctx->get_scope_level()-newlev);
+
 #ifdef Z3_DEBUG_SMS
     	 if(!child_ctx->inconsistent() ){
     	    for(int i = 0;i<child_ctx->parent_qhead;i++){
@@ -437,44 +391,26 @@ namespace smt {
     }
 
 
-
+    //Construct the reason for this assignment, in terms of interface varaibles.
     void theory_sat::mk_reason_for(literal parent_lit, svector<literal> & reason_out) {
     	SASSERT(parent_lit!=null_literal);
-    	if(parent_lit.var()==5){
-    		int  a=1;
-    	}
 
     	dbg_reasons();
 
     	literal child_lit = literal(parent_child_map[ parent_lit.var()],parent_lit.sign());
     	SASSERT(child_ctx->get_assignment(child_lit)==l_true);
-#ifdef REPORT
-    	std::cout<<"Construct reason for " << child_lit << ": ";
-            	for(int i = 0;i<child_ctx->m_assigned_literals.size();i++){
-            		literal l = child_ctx->m_assigned_literals[i];
-            		int lev = child_ctx->get_assign_level(l);
-            		std::cout<<  l << "(L" << lev << ") ";
-            	}
-            	std::cout<<"\n";
-#endif
+
     	child_ctx->m_conflict_resolution->mk_relative_lemma(child_lit,b_justification::mk_axiom(),true,&check_j,this);
     	reason_out.reset();
-
-
 
     	reason_out.push_back(parent_lit);
     	for(literal_vector::const_iterator i = child_ctx->m_conflict_resolution->begin_relative();i!= child_ctx->m_conflict_resolution->end_relative();i++){
     		literal c_lit = *i;
     		SASSERT(c_lit.var()<child_parent_map.size());
     		literal p_lit = literal(child_parent_map[ c_lit.var()],c_lit.sign());
-    		if(p_lit.var()==null_bool_var){
-    							exit(3);
-    						}
+    		SASSERT(p_lit.var()!=null_bool_var);
     		reason_out.push_back(p_lit);
     	}
-
-
-    	//reason_out[0]=~reason_out[0];
 #ifdef Z3_DEBUG_SMS
     	get_context().dbg_check(reason_out);
 #endif
@@ -482,27 +418,6 @@ namespace smt {
 
      void theory_sat::assign_eh(bool_var v, bool is_true){
     	 return;
-    	/* if(!child_ctx||  !parent_child_map.size())
-    	     		return;
-
-
-
-
-    	literal child_lit = literal(parent_child_map[v],!is_true);
-    	literal t = literal(child_parent_map[child_lit.var()],!is_true);
-#ifdef REPORT
-    	std::cout<< get_context().solver_num << "(" << t << ")" << " to " << child_ctx->solver_num << "(" << child_lit <<")\n";
-#endif
-    	SASSERT(t.var()==v);
-    	SASSERT(t.var()!=null_bool_var);
-    	int plev = get_context().get_assign_level(v);
-    	sync_levels(get_context().get_assign_level(v));// get_context().get_assign_level(v));
-    	SASSERT(get_context().get_assign_level(v)==child_ctx->m_scope_lvl);
-    	//ok, need to switch this to creating a justification that can be distinguished from true axioms.
-    	child_ctx->assign(child_lit ,b_justification(parent_just), false);
-    	if(child_lit.var()==22){
-    		int a=1;
-    	}*/
     }
 
 	    bool theory_sat::internalize_atom(app * n, bool gate_ctx) {
@@ -516,31 +431,13 @@ namespace smt {
 	            TRACE("sat_internalize", tout << "term was re-internalized: #" << n->get_id() << "\n";);
 	            return true;
 	        }
+	  	        bool_var v  = ctx.mk_bool_var(n);
 
-
-	        //To link theories, create a _new_ variable in the upper theory, and then associate it with the theory of SMT identifier so that context will call theory_sat.assign_eh
-
-	        bool_var v  ; // = ctx.get_bool_var(n);
-
-			//if(v==null_bool_var)
-				v = ctx.mk_bool_var(n);
-#ifdef REPORT
-				//std::cout << get_context().solver_num << " internalising atom:\n"<<mk_pp(n, get_context().get_manager()) << " is variable " << v  << "\n";
-
-
-				if(get_context().get_assignment(v)!=l_undef){
-					std::cout<<"ALREADY ASSIGNED!\n";
-
-				}
-#endif
-
-	       //
 	        int index = n->get_decl_kind() ;
 			expr * childExp= exported[index];
 			if(child_ctx->get_manager().is_true(childExp) ||child_ctx->get_manager().is_false(childExp)  )
 			{
 				//then this atom is a known constant, and we can just assert it in the main solver.
-
 				 if(child_ctx->get_manager().is_true(childExp)){
 					 get_context().assert_expr(n);
 					 literal ls[1] = { literal(v,false) };
@@ -561,30 +458,29 @@ namespace smt {
 
 	        bool_var subvar =child_ctx->get_bool_var(childExp);
 
-	        //catch constants here
-
-
 	        SASSERT(subvar!=null_bool_var);
-#ifdef REPORT
-	      //  std::cout << get_context().solver_num << " < " << child_ctx->solver_num << " exported from child atom:\n"<<mk_pp(childExp, child_ctx->get_manager()) << " is variable " << subvar  << "\n";
-	        std::cout<< get_context().solver_num << " var " << v << " < " << child_ctx->solver_num << " var " << subvar << "\n";
-			if(child_ctx->get_assignment(subvar)!=l_undef){
-				std::cout<<"ALREADY ASSIGNED SUBVAR!\n";
-			}
-#endif
+
 	        if(subvar==null_bool_var)
 	        	subvar = child_ctx->mk_bool_var(childExp);
-	        connect(v,subvar,child_ctx);
 
+			while(parent_child_map.size()<=v){
+				parent_child_map.push_back(null_bool_var);
+			}
+			while(child_parent_map.size()<=subvar){
+				child_parent_map.push_back(null_bool_var);
+				}
+			SASSERT(parent_child_map[v]==null_bool_var);
+			SASSERT(child_parent_map[subvar]==null_bool_var);
+			parent_child_map[v]=subvar;
+			child_parent_map[subvar]=v;
 
 
 	        TRACE("sat_internalize", tout << "succeeded... v: " << v << "\n";);
-	       // std::cout<<  "succeeded... v: " << v << "\n";
+
 	        return true;
 	    }
 
     bool theory_sat::internalize_term(app * term) {
-    	int a = 1;
         return false;
     }
 
@@ -618,10 +514,20 @@ namespace smt {
 
 
     }
+
+
     final_check_status theory_sat::final_check_eh() {
     	if(!child_ctx)
 				return FC_DONE;
 
+    	//Ok: Now that we have successfully solved the parent solver, try solving the child solver.
+    	//Either the child solver can be solved under its current interface assignment, or it cant.
+
+    	//We are looping here to allow the child solver to backtrack past the interface assignments when it learns clauses,
+    	//while still forcing it to solve under those assignments.
+
+    	//There is actually some magic here: controlling exactly how the subsolver backtracks here, and deciding when it gives up and returns to the parent solver,
+    	//can have a huge influence on the runtime.
 
 
     		int initial_parent_level = get_context().get_scope_level();
@@ -638,7 +544,7 @@ namespace smt {
     			child_ctx->track_min_level=child_ctx->get_scope_level();
     			 dbg_sync();
     			//SASSERT(child_ctx->get_scope_level()==get_context().get_scope_level());
-    			 res =(child_ctx->unbounded_search());
+    			 res =(child_ctx->limited_search());
 
     			 minlev = std::min(minlev, child_ctx->track_min_level);
     			 pop_scope_eh(get_context().get_scope_level()-minlev);
@@ -661,7 +567,7 @@ namespace smt {
     }
 
     char const * theory_sat::get_name() const {
-        return m_name;
+        return "SAT_mod_SAT";
     }
 
 };

@@ -47,48 +47,27 @@ namespace smt {
 				//Use this as a marker to identify justificaiton causes that come from the parent theory.
 				 bool from_parent_theory;
 		         literal   m_lit;
-		         clause * clsreason;
-		         int antecedents_size;
-		         literal * antecedents;
 		         svector<literal> ants;
 		    public:
-		         sat_justification(svector<literal> & reason, theory_sat * theory):outer(*theory),from_parent_theory(false),m_lit(null_literal),clsreason(0),ants(){
-		        	 antecedents = new literal[reason.size()];
-		        	 antecedents_size = reason.size();
-		        	 for(int i = 0;i<reason.size();i++)
-		        		 antecedents[i]=reason[i];
+		         sat_justification(svector<literal> & reason, theory_sat * theory):outer(*theory),from_parent_theory(false),m_lit(null_literal),ants(){
+
 		         }
 		         ~sat_justification(){
-		        	 if(antecedents){
-		        		 delete []antecedents;
-		        	 }
+
 		         }
-		         sat_justification(literal l, theory_sat * theory ):outer(*theory), m_lit(l),clsreason(0),from_parent_theory(false),antecedents_size(0),antecedents(0),ants(){SASSERT(m_lit!=null_literal);}
-		         sat_justification( theory_sat * theory ):outer(*theory), m_lit(null_literal),clsreason(0),from_parent_theory(true),antecedents_size(0),antecedents(0),ants(){;}
+		         sat_justification(literal l, theory_sat * theory ):outer(*theory), m_lit(l),from_parent_theory(false),ants(){SASSERT(m_lit!=null_literal);}
+		         sat_justification( theory_sat * theory ):outer(*theory), m_lit(null_literal),from_parent_theory(true),ants(){;}
 		          proof* mk_proof(smt::conflict_resolution&){return NULL;};
 		          bool fromParentTheory(){
 		        	  return from_parent_theory;
 		          }
-		          bool hasAntecedents(){
-		        	  return antecedents_size;
-		          }
+
 		        virtual void get_antecedents(conflict_resolution & cr) {
 		        	//ok, construct the clause for this implication now, and then use it to mark the antecedents
 		        	if(from_parent_theory){
 		        		return;//no causes at all
 		        	}
 
-		        /*	if(antecedents){
-		        		literal first = antecedents[0];
-
-						for(int i = outer.get_context().get_assignment(first)==l_true ? 1:0 ;i<antecedents_size;i++){
-							literal l =antecedents[i];
-
-							SASSERT(outer.get_context().get_assignment(l)==l_false);
-							cr.mark_literal(~l);
-						}
-		        		return;
-		        	}*/
 		        	if(ants.size()){
 						for(int i = 0;i< ants.size();i++){
 							literal l = ants[i];
@@ -104,30 +83,12 @@ namespace smt {
 		        	}
 		    		outer.mk_reason_for(m_lit ,outer.tmp_reason);
 
-					//Now, construct this clause so we don't need to do this again.
-					 //ctx.assign(l, ctx.mk_justification(theory_propagation_justification(get_id(), ctx.get_region(), antecedents.size(), antecedents.c_ptr(), l)));
-					/*SASSERT(outer.tmp_reason.size()>0);
-					if(outer.tmp_reason.size()>2){
-						//I would like to create a clause at this point, but it seems Z3 doesn't support doing this.
-						//	clsreason = outer.get_context().mk_clause(outer.tmp_reason.size(), outer.tmp_reason.c_ptr(),0,CLS_LEARNED);
-					}
 
-
-		        	if(clsreason){
-		        		SASSERT(!clsreason->deleted());
-						for(int i = 0;i<clsreason->get_num_literals();i++){
-							literal l = clsreason->get_literal(i);
-							SASSERT(l!=null_literal);
-							if(l.var()!=m_lit.var()){
-								SASSERT(outer.get_context().get_assignment(l)==l_false);
-								cr.mark_literal(~l);
-							}
-						}
-		        	}*/
 		        	SASSERT(outer.tmp_reason[0].var()==m_lit.var());
-		        	clsreason = outer.get_context().mk_clause(outer.tmp_reason.size(), outer.tmp_reason.c_ptr(),0,CLS_AUX_LEMMA);
 
-		        	//antecedents = new literal[outer.tmp_reason.size()];
+		        	//Creating a clause here is optional, and its not clear how well it works in Z3. Also, should this be a learnt clause instead?
+		        	outer.get_context().mk_clause(outer.tmp_reason.size(), outer.tmp_reason.c_ptr(),0,CLS_AUX_LEMMA);
+
 					literal first = outer.tmp_reason[0];
 					for(int i = 0;i<outer.tmp_reason.size();i++){
 						literal l = outer.tmp_reason[i];
@@ -137,7 +98,6 @@ namespace smt {
 
 						ants.push_back(l);
 
-						//antecedents[i]= outer.tmp_reason[i];
 						if(l!=m_lit){
 							SASSERT(outer.get_context().get_assignment(l)==l_false);
 							cr.mark_literal(~l);
@@ -145,10 +105,6 @@ namespace smt {
 							SASSERT(outer.get_context().get_assignment(l)==l_true);
 						}
 					}
-
-
-
-
 		        }
 		        virtual theory_id get_from_theory() const {
 		                return outer.get_id();
@@ -158,27 +114,20 @@ namespace smt {
 		    };
 public:
 
-       // typedef trail_stack<theory_sat> th_trail_stack;
-
     	friend class sat_justification;
 
     	sat_justification * parent_just;
         ptr_addr_map<expr, expr*> exported_functions;
 
-        //typedef svector<theory_var> vars;
-
-
-
         //These two maps connect variable ids in the parent and child contexts
+
          svector<bool_var> parent_child_map;
          svector<bool_var> child_parent_map;
-         svector<std::pair<int,literal*> > to_create;
 
-         char * m_name;
+
          bool initial_propagation;
          int popto;
         context * child_ctx;
-        bool m_flip_assign;
         vector<expr*> exported;
 
            protected:
@@ -195,39 +144,18 @@ public:
                }
                virtual bool can_propagate() {
             	   //in principle, we should just return child_ctx->can_propagate();
-            	   int qh = child_ctx&& child_ctx->m_qhead ;
-            	   int sz = child_ctx&& child_ctx->m_assigned_literals.size();
-            	   bool conflict =child_ctx&&  child_ctx->inconsistent() ;
+
             	   //But that will lead to a huge recursive call being made at every propagation step.
-            	   //So instead, we ensure that there is propagation at the very first step, and afterward assume that if the current solver is up to date, so are the sub solvers
-            	   //bool canprop = (child_ctx && (initial_propagation || child_qhead<  child_ctx->m_qhead  || child_ctx->m_qhead!=child_ctx->m_assigned_literals.size()));
-            	 //  bool can_prop= child_ctx && (initial_propagation || child_qhead<get_context().m_assigned_literals.size() || child_ctx->m_qhead < child_ctx->m_assigned_literals.size());
+            	   //So instead, we ensure that there is propagation at the very first step (via initial_propagation), and afterward assume that if the current solver is up to date, so are the sub solvers
 
             	   if(!child_ctx)
             		   return false;
-            	   int cnum = get_context().m_assigned_literals.size()  ;
-            	   int childn = child_ctx->m_assigned_literals.size();
-            	   int childh = child_ctx->m_qhead;
+
             	   bool canprop = !(!initial_propagation && !child_ctx->inconsistent() && popto<0 && child_ctx->get_scope_level() == get_context().get_scope_level() &&    child_ctx->parent_qhead==get_context().m_assigned_literals.size()   && child_ctx->m_qhead==child_ctx->m_assigned_literals.size());
             	   if(!canprop){
             		   dbg_sync();
             	   }
             	   return canprop;
-
-
-            	   //  return (child_ctx && (initial_propagation || child_ctx->inconsistent()   || child_ctx->m_qhead!=child_ctx->m_assigned_literals.size()));
-                /*   return child_ctx && (initial_propagation ||
-                		   child_ctx->m_qhead != child_ctx->m_assigned_literals.size() ||
-                		   child_ctx->m_relevancy_propagator->can_propagate() ||
-                		   !child_ctx->m_atom_propagation_queue.empty() ||
-                		   child_ctx->m_qmanager->can_propagate() ||
-                        !child_ctx->m_eq_propagation_queue.empty() ||
-                        !child_ctx->m_th_eq_propagation_queue.empty() ||
-                        !child_ctx->m_th_diseq_propagation_queue.empty());*/
-            	   //   SASSERT(can_prop== (child_ctx && parent_child_map.size() && child_ctx->can_propagate()) );
-            	  // return can_prop;
-            	    //return child_ctx;// && ((child_qhead<get_context().) || (child_ctx->m_qhead < child_ctx->m_assigned_literals.size()));
-					//return child_ctx && parent_child_map.size() && child_ctx->can_propagate();
                }
                void init_search_eh();
                virtual void propagate();
@@ -235,38 +163,12 @@ public:
                virtual void pop_scope_eh(unsigned num_scopes);
                void mk_reason_for(literal l, svector<literal> & reason) ;
                bool sharedWithParent(bool_var child_var){
-            	   //spped this up!
-
             	   return  child_parent_map.size()>child_var && child_parent_map[child_var] != null_bool_var;
                }
 
                bool sharedWithChild(bool_var parent_var){
             	   return  parent_child_map.size()>parent_var && parent_child_map[parent_var] != null_bool_var;
                }
-
-             /*  void sync_levels(int tolevel=-1){
-            	   if(get_context().get_scope_level()<popto || popto<0){
-            		   popto = get_context().get_scope_level();
-            	   }
-            	     		if(popto>-1 && popto<child_ctx->m_search_lvl && popto < get_context().m_scope_lvl)
-            	    		popto=child_ctx->m_search_lvl;
-            	   if(child_ctx->get_scope_level()> tolevel && tolevel>=0){
-            		   if(popto<0 || popto>tolevel)
-            			   popto = tolevel;
-            	   }
-                 	if(child_ctx->get_scope_level()>popto && popto>=0){
-                 		child_ctx->pop_scope(child_ctx->get_scope_level()-popto);
-                 	}
-            		 if(child_qhead>child_ctx->m_qhead)
-            		            	 child_qhead=child_ctx->m_qhead;
-            		popto=-1;
-            		if(tolevel<0)
-            			tolevel=get_context().get_scope_level();
-                 		while(child_ctx->get_scope_level()<tolevel)
-               	     		child_ctx->push_scope();
-                 	child_ctx->m_search_lvl=get_context().get_search_level();//is there somewhere else we can do this?
-
-               }*/
 
                void dbg_reasons(){
 #ifdef Z3_DEBUG_SMS
@@ -355,7 +257,6 @@ public:
 
                 enum satmodsat_kind {
                     OP_EXPORT,
-
                 };
                 func_decl * m_sms;
                theory_sat(family_id id, context * p);
@@ -385,7 +286,6 @@ public:
 
                virtual char const * get_name() const;
 
-               void connect(bool_var parent, bool_var c, context* child);
                void attach(context * child);
                void dettach(context * child);
 

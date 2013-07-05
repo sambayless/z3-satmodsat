@@ -2532,44 +2532,40 @@ namespace smt {
 		int a =1;
     }
 #endif
+
+
+    //Attach a subsolver. The solver must be attached before any expressions are exported
+    //Note that currently only a single subsolver at a time is supported - but this can be trivially extended to support any number of subsolvers per solver.
     void context::attach(context * subSolver){
     	 theory_sat * s =(theory_sat*) get_theory(m_manager.get_family_id("satmodsat"));
     	 subSolver->pop_to_base_lvl();
     	 s->attach(subSolver);
-    	 solver_num=subSolver->solver_num+1;
-
-    	// setup_dbg();
-
+    	 solver_num=subSolver->solver_num+1;//Just used for debugging
     }
 
     //Detach a subsolver. This will also disconnect it from any exported expressions (they will be re-attached if the solver is re-attached)
+    //This hasn't really been tested yet
     void context::detach(context * subSolver){
     	 theory_sat * s =(theory_sat*) get_theory(m_manager.get_family_id("satmodsat"));
     	 s->dettach(subSolver);
     }
 
     //Export an expression from the subsolver context to this solver.
+    //This makes the expression available in this solver.
+    //The expression must be a bool or a bitvector, currently.
     expr* context::export_expr(expr * to_export, context* from){
-    	//if(!get_manager().is_bool(to_export))
-    	//	SASSERT(false);
 
     	if(from->get_manager().is_bool(to_export)){
-
-    	//sort * b = m_manager.mk_bool_sort();
-    	//func_decl* f = m_manager.mk_fresh_func_decl(1, &b, m_manager.mk_bool_sort()); //("satmodsat",1,m_manager.mk_bool_sort(),1);
     	 theory_sat * s =(theory_sat*) get_theory(m_manager.get_family_id("satmodsat"));
-    	//app* e = m_manager.mk_fresh_const(0, m_manager.mk_bool_sort());
-    	//m_manager.inc_ref(e);
+
     	 expr * original = to_export;
     	 bool negated = from->m_manager.is_not(to_export);
     	 if(negated){
     		 to_export = to_app(to_export)->get_arg(0);
     	 }
-    	// SASSERT(! from->m_manager.is_not(to_export));
+
     	 expr * fexp;
-#ifdef REPORT
-    	// std::cout<<"Exported " <<  mk_pp(to_export, from->get_manager()) << " from " << from->solver_num << " to "  <<  solver_num  << "\n";
-#endif
+
     	 if(s->isExported(to_export,from)){
     		 fexp = s->getExported(to_export,from);
     	 }else{
@@ -2579,8 +2575,6 @@ namespace smt {
     	  fexp=m_manager.mk_app(m_manager.get_family_id("satmodsat"),s->export_expr(to_export,from));
     	 s->setExported(fexp,to_export, from);
  	    get_manager().inc_ref(fexp);
-
-    //	m_manager.inc_ref(fexp);
 
     	mark_as_relevant(fexp);
     	 }
@@ -2620,8 +2614,6 @@ namespace smt {
     	    			 expr * export_bool = from->get_manager().mk_fresh_const("exportbool",from->get_manager().mk_bool_sort());
 
     	    			 //Because export bool will have satmodsat as its theory, we need to make a copy of it to
-    	    			// expr * copy_bool = from->get_manager().mk_const(symbol("export_copy"),from->get_manager().mk_bool_sort());
-    	    			// from->assert_expr(from->get_manager().mk_eq(export_bool,export_bool));
     	    			 from->assert_expr( from->get_manager().mk_eq(export_bit, bv.mk_bv(1,&export_bool)));
 
     	    			 expr * exported_bool =m_manager.mk_app(m_manager.get_family_id("satmodsat"),s->export_expr(export_bool,from));
@@ -2639,8 +2631,6 @@ namespace smt {
 		 dbg_solver->assert_expr( dbg_solver->get_manager().mk_eq(dbg_copy_bit,dbg_bit));
     	 dbg_map.insert(copy_bool,dbg_cpy_bool);
     	 dbg_map.insert(exported_bool,dbg_cpy_bool);
-
-
 #endif
     	    		 }
 
@@ -3368,6 +3358,12 @@ namespace smt {
             (*it)->setup();
     }
 
+    /**
+     * This is an alternative implementation of solving under assumptions, in the style of Minisat 2.
+     * Instead of using m_search_lvl, we just force the first num_assumptions decisions to be the assumptions.
+     * When limited_search backtracks past its initial decision level, it quits, dropping back into the outer loop
+     * which then attempts to re-assign any assumptions that have been backtracked past.
+     */
     lbool context::check_fast(unsigned num_assumptions, expr * const * assumptions, bool reset_cancel) {
 
         m_stats.m_num_checks++;
@@ -3430,7 +3426,7 @@ namespace smt {
 						r = l_false;
 					}
 					else {
-						r = unbounded_search();
+						r = limited_search();
 						if (r == l_false)
 							mk_unsat_core();
 					}
@@ -3747,7 +3743,7 @@ namespace smt {
 
                     if (m_num_conflicts_since_lemma_gc > m_lemma_gc_threshold &&
                         (m_fparams.m_lemma_gc_strategy == LGC_FIXED || m_fparams.m_lemma_gc_strategy == LGC_GEOMETRIC)) {
-                       // del_inactive_lemmas();
+                        del_inactive_lemmas();
                     }
 
                     m_dyn_ack_manager.propagate_eh();
@@ -3787,7 +3783,7 @@ namespace smt {
 
     }
 
-    lbool context::unbounded_search() {
+    lbool context::limited_search() {
 
 
           lbool    status            = inconsistent()? l_false: l_undef;

@@ -1105,7 +1105,7 @@ protected:
         void end_search();
 
         lbool search();
-        lbool unbounded_search();
+        lbool limited_search();
         lbool forced_search();
         void inc_limits();
 

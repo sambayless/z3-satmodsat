@@ -1,23 +1,4 @@
-/*++
-Copyright (c) 2006 Microsoft Corporation
 
-Module Name:
-
-    smtlib_frontend.cpp
-
-Abstract:
-
-    Frontend for reading Smtlib input files
-
-Author:
-
-    Nikolaj Bjorner (nbjorner) 2006-11-3.
-
-Revision History:
-
-    Leonardo de Moura: new SMT 2.0 front-end, removed support for .smtc files and smtcmd_solver object.
-
---*/
 #include<iostream>
 #include<time.h>
 #include<signal.h>
@@ -65,15 +46,11 @@ unsigned read_btor(char const* file_name, front_end_params& front_end_params) {
     ast_manager * m = new ast_manager();
     front_end_params.m_minimize_lemmas=false;//disabled for now
     front_end_params.m_relevancy_lvl=0;
-    front_end_params.m_pre_simplifier=false;
-    front_end_params.m_pre_simplify_expr=false;
+    front_end_params.m_pre_simplifier=false;//This seems to break the exported variables - not sure how to fix this.
+
     reg_decl_plugins(*m);
 
-    // temporary hack until strategic_solver is ported to new tactic framework
 
-
-    register_on_timeout_proc(on_timeout);
-    signal(SIGINT, on_ctrl_c);
     vector<expr*> gates;
     vector<expr*> inputs;
     vector<expr*> outputs;
@@ -94,9 +71,11 @@ unsigned read_btor(char const* file_name, front_end_params& front_end_params) {
     	parse_btor (std::cin,inputs,outputs,in_latches,out_latches,gates,asserted,*m);
     }
 
+    //Should apply re-writing here, etc...
+
     params_ref params;
 
-   // params * t = mk_qfbv_tactic(m,front_end_params,params);
+
     smt::context *ctx = new smt::context(*m,front_end_params,params);
 
     for(int i =  0;i<asserted.size();i++){

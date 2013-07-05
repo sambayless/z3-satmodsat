@@ -366,25 +366,19 @@ static void inline read_line(Buffer & in,vector<bvector> & inputs,vector<bvector
 	//this could be done more efficiently with a proper parser, of course...
 
 	 family_id fid = m.get_family_id("bv");
-	 //sort* bv_Type  = m.mk_sort(fid, BV_SORT, 0, 0);
 	 bv_decl_plugin & bv_decl =*(bv_decl_plugin*) m.get_plugin(fid);
 	 bv_util bv(m);
 
 	 expr * e=NULL;
 	 bvector b;b.bv=NULL;
 	 skip_whitespace(in);
-	// std::cerr<<  var << " " << peek_word(in).c_str() << "\n";
-	 if(var==404){
-		 int a=1;
-	 }
+
 	//input variable
 	 int bit_width=-1;
 	if(match(in,"var")){
 		bit_width =  parse_int(in);
 		std::string s = read_word(in);
 		const char * name = s.c_str();
-		//expr * e = m.mk_const_decl(symbol(name), bv_decl.get_bv_sort(bit_width), func_decl_info(fid, OP_BV_NUM));
-	//	expr * e = bv_decl.mk_mkbv(bit_width)
 		expr * vars [bit_width];
 		for(int i = 0;i<bit_width;i++){
 			vars[i]= m.mk_fresh_const(name,m.mk_bool_sort());
@@ -404,8 +398,6 @@ static void inline read_line(Buffer & in,vector<bvector> & inputs,vector<bvector
 		int nextFunc = parse_int(in);
 		expr* inExp = get_line(inputVar,gates,m);
 		e = get_line(nextFunc,gates,m);
-		//while(out_latches.size()<=inputVar)
-
 			int bit_width = bv.get_bv_size(e);
 			expr * vars [bit_width];
 			for(int i = 0;i<bit_width;i++){
@@ -493,14 +485,10 @@ static void inline read_line(Buffer & in,vector<bvector> & inputs,vector<bvector
 		bit_width =  parse_int(in);
 		int invar = parse_int(in);
 		e= m.mk_app(fid, OP_BREDAND, get_line(invar,gates,m));
-		//get all the bits and and them together (which is the same as checking for equals all ones = -1).
-		//e= m.mk_eq(get_line(invar,gates,m), bv.mk_numeral(bit_width,-1) );
 	}else if (match(in,"redor")){
 		bit_width =  parse_int(in);
 		int invar = parse_int(in);
-
 		e= m.mk_app(fid, OP_BREDOR, get_line(invar,gates,m));
-	//	e= m.mk_not( m.mk_eq(get_line(invar,gates,m), bv.mk_numeral(bit_width,0) ));
 	}else if (match(in,"redxor")){
 		//ie, parity
 		bit_width =  parse_int(in);
@@ -905,12 +893,7 @@ void parse_btor_core(Buffer & in,vector<expr*>& inputs,vector<expr*> & outputs,v
     vector<bvector> out_latches_bv;
     vector<bvector> gates_bv;
 
-
     gates_bv.push_back(bvector());//gates start at index 1
-
-
-
-
 
     for (;;){
     	skip_whitespace(in);
@@ -963,9 +946,6 @@ void parse_btor_core(Buffer & in,vector<expr*>& inputs,vector<expr*> & outputs,v
     	}
     }
     inputs.shrink(inputs.size() -( i-j));
-
-
-
     return;
 }
 

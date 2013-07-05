@@ -1,23 +1,4 @@
-/*++
-Copyright (c) 2006 Microsoft Corporation
 
-Module Name:
-
-    smtlib_frontend.cpp
-
-Abstract:
-
-    Frontend for reading Smtlib input files
-
-Author:
-
-    Nikolaj Bjorner (nbjorner) 2006-11-3.
-
-Revision History:
-
-    Leonardo de Moura: new SMT 2.0 front-end, removed support for .smtc files and smtcmd_solver object.
-
---*/
 #include<iostream>
 #include<time.h>
 #include<signal.h>
@@ -60,16 +41,14 @@ unsigned read_aig(char const* file_name, front_end_params& front_end_params) {
     g_start_time = clock();
     register_on_timeout_proc(on_timeout);
     signal(SIGINT, on_ctrl_c);
-    //cmd_context ctx(&front_end_params);
+
     ast_manager m;
-    front_end_params.m_minimize_lemmas=false;//disabled for now
-    front_end_params.m_relevancy_lvl=0;
+    front_end_params.m_minimize_lemmas=false;//disabled for now.
+   /* front_end_params.m_relevancy_lvl=0;
     front_end_params.m_pre_simplifier=false;
-    front_end_params.m_pre_simplify_expr=false;
+    front_end_params.m_pre_simplify_expr=false;*/
     reg_decl_plugins(m);
     smt::context *ctx = new smt::context(m,front_end_params);
-    // temporary hack until strategic_solver is ported to new tactic framework
-
 
     register_on_timeout_proc(on_timeout);
     signal(SIGINT, on_ctrl_c);
@@ -213,19 +192,7 @@ unsigned read_aig(char const* file_name, front_end_params& front_end_params) {
 				dbg_property = dbg_ctx->get_manager().mk_fresh_const("Property",dbg_ctx->get_manager().mk_bool_sort());
 				dbgeq = dbg_ctx->get_manager().mk_eq(dbg_property,dbg_any_out);
 				dbg_ctx->assert_expr(dbgeq);
-				//dbg_ctx->push();
-			//	dbg_ctx->assert_expr(dbg_any_out);
 
-				/*dbg_ctx->assert_expr(t);
-				expr*e=dbg_ctx->get_manager().mk_not(t);
-				dbg_ctx->assert_expr(e);*/
-				//dbg_ctx->assert_expr(dbg_ctx->get_manager().mk_not(dbg_out_latches_prev[1]));
-				//dbg_ctx->assert_expr(t);
-			//	lbool s = dbg_ctx->check();
-
-			//	dbg_ctx->pop_to_base_lvl();
-
-				//		dbg_ctx->pop(1);
 
 			}
 #endif
@@ -242,17 +209,12 @@ unsigned read_aig(char const* file_name, front_end_params& front_end_params) {
     	 	    ctx2->dbg_map.insert(eq,dbg_ctx->get_manager().mk_true() );
 #endif
     	    }
-    	 /*   for(int i = 0;i<out_latches.size();i++){
-    	    	 std::cout<<"Latchout " << i << ": " << mk_pp(out_latches[i],  ctx2->get_manager()) << "\n";
-    	    }*/
-    	   // ctx2->push();
-    	   //    ctx2->assert_expr(any_out);
+
     	    expr * property = ctx2->get_manager().mk_fresh_const("Property",ctx2->get_manager().mk_bool_sort());
 
     	    expr * eq = ctx2->get_manager().mk_eq(property,any_out);
     	    ctx2->assert_expr(eq);
-    	//    std::cout<<"Property: " << mk_pp(property,  ctx2->get_manager()) << "\n";
-    	//    std::cout<<"AnyOut: " << mk_pp(any_out,  ctx2->get_manager()) << "\n";
+
 #ifdef Z3_DEBUG_SMS
     for(int i = 0;i<gates.size();i++){
     	ctx2->dbg_gate_map.insert(gates[i],i);
@@ -267,11 +229,7 @@ unsigned read_aig(char const* file_name, front_end_params& front_end_params) {
 #endif
 
     	      lbool res = ctx2->check_fast(1,&property);
-    	     // lbool resc = ctx2->check();
-    	    //  SASSERT(resc==l_true);
 
-    	   //   ctx2->pop_to_base_lvl();
-    	   //    ctx2->pop(1);
 		    result = (res==l_true);
 		    ctx = ctx2;
 #ifdef Z3_DEBUG_SMS
