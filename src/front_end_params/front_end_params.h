@@ -73,6 +73,7 @@ struct front_end_params : public preprocessor_params, public spc_params, public 
     bool                m_user_theory_persist_axioms;
     bool                m_nlsat; // temporary hack until strategic_solver is ported to new tactic framework
     bool				m_sms;
+    bool				m_bmc;
     front_end_params():
         m_param_vector(alloc(param_vector, this)),
         m_engine(ENG_SMT),
@@ -115,7 +116,8 @@ struct front_end_params : public preprocessor_params, public spc_params, public 
         m_user_theory_preprocess_axioms(false),
         m_user_theory_persist_axioms(false),
         m_nlsat(false),
-        m_sms(true){
+        m_sms(true),
+        m_bmc(false){
     }
 
     void register_params(ini_params & p);

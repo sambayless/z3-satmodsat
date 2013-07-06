@@ -293,7 +293,7 @@ lbool simple_solver(int i, svector<expr*> & assumptions, svector<expr*> & learnt
 
 				 expr_ref    val(solvers[i]->get_manager());
 
-				 bool l = m->eval(in, val,true);
+				 bool l = m->eval(in, val);
 				 if(l){
 					 if(val.get() == solvers[i]->get_manager().mk_true()){
 					//	 std::cout<<mk_pp(in,solvers[i]->get_manager());
@@ -453,12 +453,126 @@ bool simple(char const* file_name, front_end_params & front_end_params){
     return result;
 }
 
+bool monolithic(char const* file_name, front_end_params& front_end_params){
+	 ast_manager m;
+	    front_end_params.m_minimize_lemmas=false;//disabled for now.
+	   /* front_end_params.m_relevancy_lvl=0;
+	    front_end_params.m_pre_simplifier=false;
+	    front_end_params.m_pre_simplify_expr=false;*/
+	    reg_decl_plugins(m);
+	  smt::context *ctx = new smt::context(m,front_end_params);
+
+	    register_on_timeout_proc(on_timeout);
+	    signal(SIGINT, on_ctrl_c);
+	    vector<expr*> gates;
+	    vector<expr*> inputs;
+	    vector<expr*> outputs;
+	    vector<expr*> in_latches;
+	    vector<expr*> out_latches;
+	    vector<expr*> out_latches_prev;
+	    bool result = true;
+	    if (file_name) {
+	        std::ifstream in(file_name);
+	        if (in.bad() || in.fail()) {
+	            std::cerr << "(error \"failed to open file '" << file_name << "'\")" << std::endl;
+	            exit(ERR_OPEN_FILE);
+	        }
+	         parse_aig (in,inputs,outputs,in_latches,out_latches,gates,ctx->get_manager());
+	    }
+	    else {
+	         parse_aig (std::cin,inputs,outputs,in_latches,out_latches,gates,ctx->get_manager());
+	    }
+	    for(int i =  0;i<out_latches.size();i++){
+	    	expr * e =  ctx->get_manager().mk_fresh_const("OutLatch",ctx->get_manager().mk_bool_sort());
+		     ctx->assert_expr(ctx->get_manager().mk_eq(out_latches[i],e));
+		     out_latches[i]=e;
+	    }
+	    //AIG format assumes all in latches start assigned to 0
+	    for(int i = 0;i<in_latches.size();i++){
+	    	ctx->assert_expr(m.mk_not(in_latches[i]));
+	    }
+	    if(outputs.size()==0)
+	    	exit(20);
+	    expr* any_out = outputs[0];//ctx->get_manager().mk_or(outputs.size(),outputs.c_ptr());
+	   // ctx->push();
+	   // ctx->assert_expr(any_out);
+	    expr * property = ctx->get_manager().mk_fresh_const("Property",ctx->get_manager().mk_bool_sort());
+	    ctx->assert_expr(ctx->get_manager().mk_eq(property,any_out));
+
+	        lbool res = ctx->check(1,&property);
+	        proof * p = ctx->get_proof();
+
+	 //   ctx->pop_to_base_lvl();
+	   // ctx->pop(1);
+	    result = (res==l_true);
+	    std::cout<<"k=" << 0 <<"\n";
+	    int i = 0;
+
+	    if(out_latches.size()){
+	     	//do a really simple BMC pass
+	    	for(i = 1;!result;i++){
+	    		std::cout<<"k=" << i <<"\n";
+	    		out_latches_prev.reset();
+	    		out_latches_prev.append(out_latches.size(), out_latches.c_ptr());
+
+
+	    	    if (file_name) {
+	    	        std::ifstream in(file_name);
+	    	        if (in.bad() || in.fail()) {
+	    	            std::cerr << "(error \"failed to open file '" << file_name << "'\")" << std::endl;
+	    	            exit(ERR_OPEN_FILE);
+	    	        }
+	    	         parse_aig (in,inputs,outputs,in_latches,out_latches,gates,ctx->get_manager());
+	    	    }
+	    	    else {
+	    	         parse_aig (std::cin,inputs,outputs,in_latches,out_latches,gates,ctx->get_manager());
+	    	    }
+	    	    for(int i =  0;i<out_latches.size();i++){
+	    	       	expr * e =  ctx->get_manager().mk_fresh_const("OutLatch",ctx->get_manager().mk_bool_sort());
+	    	         ctx->assert_expr(ctx->get_manager().mk_eq(out_latches[i],e));
+	    	   	     out_latches[i]=e;
+	    	       }
+
+
+	    	    expr* any_out = outputs[0];//m->mk_and(outputs.size(),outputs.c_ptr());
+	    	    for(int i = 0;i<in_latches.size();i++){
+
+	    	    	expr * eq = m.mk_eq(out_latches_prev[i],in_latches[i]);
+	    	 	    ctx->assert_expr(eq);
+
+	    	    }
+
+	    	    expr * property = ctx->get_manager().mk_fresh_const("Property",ctx->get_manager().mk_bool_sort());
+
+	    	    expr * eq = ctx->get_manager().mk_eq(property,any_out);
+	    	    ctx->assert_expr(eq);
+
+
+	    	      lbool res = ctx->check(1,&property);
+
+			    result = (res==l_true);
+
+
+	    	}
+
+
+	     }else{
+	     	//this is combinatorial, so we are done
+	     }
+	    display_statistics();
+	         std::cout<<"Result: " << (result? "10":"20")<< " after " << i << " steps" <<"\n";
+	    return result;
+}
+
 unsigned read_aig(char const* file_name, front_end_params& front_end_params) {
     g_start_time = clock();
     register_on_timeout_proc(on_timeout);
     signal(SIGINT, on_ctrl_c);
     bool result = l_undef;
-    if(front_end_params.m_sms){
+    if(front_end_params.m_bmc){
+    	std::cout<<"Using monolithic (incremental) bmc\n";
+		result = monolithic(file_name,front_end_params);
+    }else if(front_end_params.m_sms){
     	std::cout<<"Using SAT mod SAT\n";
     	result = sms(file_name,front_end_params);
     }else{
