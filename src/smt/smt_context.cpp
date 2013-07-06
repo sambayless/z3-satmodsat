@@ -3208,6 +3208,7 @@ namespace smt {
         m_search_lvl = m_scope_lvl;
         SASSERT(!(num_assumptions > 0) || m_search_lvl > m_base_lvl);
         SASSERT(!(num_assumptions == 0) || m_search_lvl == m_base_lvl);
+
     }
 
     void context::reset_assumptions() {
@@ -3241,7 +3242,6 @@ namespace smt {
             }
         }
         reset_assumptions();
-        m_search_lvl= m_base_lvl;//SAM: ADDED THIS TEMPORARILY FOR DEBUGGING
         pop_to_base_lvl(); // undo the push_scope() performed by init_assumptions
         m_search_lvl = m_base_lvl;
         std::sort(m_unsat_core.c_ptr(), m_unsat_core.c_ptr() + m_unsat_core.size(), ast_lt_proc());
@@ -3483,8 +3483,7 @@ namespace smt {
                 }
             }
         }
-        if(r==l_true)
-        	   SASSERT(m_base_lvl>0 || get_search_level()==num_assumptions);
+
         check_finalize(r);
         return r;
     }

@@ -244,17 +244,12 @@ unsigned read_btor(char const* file_name, front_end_params& front_end_params) {
     	 	    ctx2->dbg_map.insert(eq,dbg_ctx->get_manager().mk_true() );
 #endif
     	    }
-    	 /*   for(int i = 0;i<out_latches.size();i++){
-    	    	 std::cout<<"Latchout " << i << ": " << mk_pp(out_latches[i],  ctx2->get_manager()) << "\n";
-    	    }*/
-    	   // ctx2->push();
-    	   //    ctx2->assert_expr(any_out);
+
     	    expr * property = ctx2->get_manager().mk_fresh_const("Property",ctx2->get_manager().mk_bool_sort());
 
     	    expr * eq = ctx2->get_manager().mk_eq(property,any_out);
     	    ctx2->assert_expr(eq);
-    	//    std::cout<<"Property: " << mk_pp(property,  ctx2->get_manager()) << "\n";
-    	//    std::cout<<"AnyOut: " << mk_pp(any_out,  ctx2->get_manager()) << "\n";
+
 #ifdef Z3_DEBUG_SMS
     for(int i = 0;i<gates.size();i++){
     	ctx2->dbg_gate_map.insert(gates[i],i);
@@ -269,11 +264,7 @@ unsigned read_btor(char const* file_name, front_end_params& front_end_params) {
 #endif
 
     	      lbool res = ctx2->check_fast(1,&property);
-    	     // lbool resc = ctx2->check();
-    	    //  SASSERT(resc==l_true);
 
-    	   //   ctx2->pop_to_base_lvl();
-    	   //    ctx2->pop(1);
 		    result = (res==l_true);
 		    ctx = ctx2;
 #ifdef Z3_DEBUG_SMS
