@@ -93,6 +93,7 @@ namespace smt {
         local_qhead=0;
         parent_qhead=0;
         track_min_level=0;
+        min_subsearch_level=0;
         m_case_split_queue = mk_case_split_queue(*this, p);
 #ifdef Z3_DEBUG_SMS
         dbg_solver=0;

@@ -124,6 +124,12 @@ public:
          svector<bool_var> parent_child_map;
          svector<bool_var> child_parent_map;
 
+         enum saerchtype{FORCE_SUBSEARCH,SINGLE_SUBSEARCH, PARTIAL_SUBSEARCH,LONG_PARTIAL_SUBSEARCH};
+
+         saerchtype m_subsearch;
+
+         bool m_subsearch_abort_early;
+
 
          bool initial_propagation;
          int popto;

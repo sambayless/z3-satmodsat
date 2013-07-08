@@ -263,7 +263,17 @@ void parse_cmd_line_args(int argc, char ** argv) {
                     error("optional argument (/rd:num) is missing.");
                 }
                 g_front_end_params->m_random_var_freq = static_cast<double>(strtol(opt_arg, 0, 10)) / 100.0;
-            }else if (strcmp(opt_name, "no-sms") == 0) {
+            }else if (strcmp(opt_name, "subsearch") == 0){
+            	 if (!opt_arg) {
+					error("optional argument (/subsearch:num) is missing.");
+				}
+
+            	 g_front_end_params->m_sms_subsearch = strtol(opt_arg, 0, 10);
+
+            }else if (strcmp(opt_name, "subsearch-abort") == 0){
+               	 g_front_end_params->m_sms_subsearch_abort = true;
+
+           }else if (strcmp(opt_name, "no-sms") == 0) {
                  g_front_end_params->m_sms=false;
             }else if (strcmp(opt_name, "bmc") == 0) {
                 g_front_end_params->m_bmc=true;

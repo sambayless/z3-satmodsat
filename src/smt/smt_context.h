@@ -138,7 +138,7 @@ namespace smt {
         int local_qhead;
         int parent_qhead;
         int track_min_level;
-
+        int min_subsearch_level;
 
 #ifdef Z3DEBUG
         svector<new_th_eq>          m_propagated_th_eqs;

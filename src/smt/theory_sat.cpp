@@ -28,33 +28,31 @@ namespace smt {
 
         theory(id),
           child_ctx(NULL),
-        initial_propagation(true),
-        popto(-1)
-
+         initial_propagation(true),
+         popto(-1),
+     	 m_subsearch(FORCE_SUBSEARCH),
+     	 m_subsearch_abort_early(false)
     {
     	init(parent);
     	parent_just= new sat_justification(this);
-
-    	 m_sms = get_manager().mk_const_decl(symbol("@"),get_manager().mk_bool_sort());
-
-    	               get_manager().inc_ref(m_sms);
-
-    	            //   func_decl * mk_func_decl(symbol const & name, unsigned arity, sort * const * domain, sort * range) {
+    	m_sms = get_manager().mk_const_decl(symbol("@"),get_manager().mk_bool_sort());
+    	m_subsearch = static_cast<saerchtype>( get_context().get_fparams().m_sms_subsearch);
+    	m_subsearch_abort_early= get_context().get_fparams().m_sms_subsearch_abort;
+    //	std::cout<<"Subsearch type = " << m_subsearch << " " << ", early abort = " << m_subsearch_abort_early << "\n";
+    	get_manager().inc_ref(m_sms);
     }
     theory_sat::theory_sat( context * parent):
 
            theory(0),
-
-
            child_ctx(NULL),
-           initial_propagation(true),popto(-1)
-
+           initial_propagation(true),
+           popto(-1),
+       	  m_subsearch(FORCE_SUBSEARCH),
+       	  m_subsearch_abort_early(false)
        {
        	init(parent);
        	parent_just= new sat_justification(this);
-
-
-   	 m_sms = get_manager().mk_const_decl(symbol("@"),get_manager().mk_bool_sort());
+       	m_sms = get_manager().mk_const_decl(symbol("@"),get_manager().mk_bool_sort());
                    get_manager().inc_ref(m_sms);
        }
 
@@ -65,6 +63,11 @@ namespace smt {
 	 void theory_sat::dettach(context * child){
 		 child_ctx=NULL;
 	 }
+
+	 //This method is passed to conflict resolution.
+	 //I'm using it just to check if a given literal should be included in the learnt clause or not,
+	 //based on whether it was assigned by the parent solver.
+	 //(This is a pretty ugly way to do this, though...)
 	    bool check_j(literal l,b_justification & b, void * data) {
 	    	if(l==null_literal)
 	    		return false;
@@ -212,6 +215,7 @@ namespace smt {
 
     		SASSERT(get_context().get_scope_level() >= child_ctx->get_scope_level());
 
+    		//The subsolver is in conflict, so generate a learnt clause on the variables that were assigned by the parent solver, and then use it to create a conflict in the parent solver
     		if(child_ctx->inconsistent()){
     			if(!get_context().inconsistent()){
     			//then we have a conflict which we need to instantiate in S
@@ -277,7 +281,8 @@ namespace smt {
 
     			return ;
     		}else{
-    			//We succesfully propagated from the parent solver to the subsolver without conflict; now check if the subsolver made any assignmnets to the interface variables, and propagate those back up to the parent solver.
+
+    			//We successfully propagated from the parent solver to the subsolver without conflict; now check if the subsolver made any assignmnets to the interface variables, and propagate those back up to the parent solver.
     			//find lits to propagate back up to the parent solver
 
     			while(child_ctx->local_qhead < child_ctx->m_assigned_literals.size()){
@@ -420,6 +425,7 @@ namespace smt {
     	 return;
     }
 
+     //Here, we are mapping the variables for the parent expression to the equivalent variable for the child expression in the child solver.
 	    bool theory_sat::internalize_atom(app * n, bool gate_ctx) {
 	        TRACE("sat_internalize", tout << "internalising atom:\n" << mk_pp(n, get_context().get_manager()) << "\n";);
 
@@ -535,12 +541,29 @@ namespace smt {
 
     		propagate();
     		int minlev = child_ctx->get_scope_level();
+    		if(get_context().track_min_level < get_context().min_subsearch_level)
+    		{
+    			//don't attempt to solve the sub context here, because the parent solver has already been backtracked passed, just return...
+    			return FC_DONE;
+    		}
+
+    		if(m_subsearch==PARTIAL_SUBSEARCH)
+				child_ctx->min_subsearch_level = child_ctx->get_scope_level();
+			else
+				child_ctx->min_subsearch_level = 0;
+
     		SASSERT(minlev<=initial_parent_level);
     		lbool res=l_undef;
     		while(!child_ctx->inconsistent() && res==l_undef){
     			propagate();
     			if(child_ctx->inconsistent())
     				break;
+
+    			if(m_subsearch==LONG_PARTIAL_SUBSEARCH)
+					child_ctx->min_subsearch_level = child_ctx->get_scope_level();
+				else
+					child_ctx->min_subsearch_level = 0;
+
     			child_ctx->track_min_level=child_ctx->get_scope_level();
     			 dbg_sync();
     			//SASSERT(child_ctx->get_scope_level()==get_context().get_scope_level());
@@ -549,9 +572,19 @@ namespace smt {
     			 minlev = std::min(minlev, child_ctx->track_min_level);
     			 pop_scope_eh(get_context().get_scope_level()-minlev);
     			 int tminlev =  std::max((int)get_context().get_search_level(),minlev);
-    			 if(get_context().get_scope_level()>tminlev)
-						get_context().pop_scope(get_context().get_scope_level()-tminlev);
-
+    			 if(get_context().get_scope_level()>tminlev){
+					get_context().pop_scope(get_context().get_scope_level()-tminlev);
+    				 if (m_subsearch_abort_early){
+    					 res= l_false;
+    					 break;//give up search
+    				 }
+    			 }
+    			 //give up after a single solve attempt.
+    			 if(m_subsearch == SINGLE_SUBSEARCH){
+    				 if(res!=l_true)
+    					 res = l_false;
+    				 break;
+    			 }
     		}
 
     		propagate();
