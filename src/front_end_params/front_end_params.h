@@ -74,7 +74,6 @@ struct front_end_params : public preprocessor_params, public spc_params, public 
     bool                m_nlsat; // temporary hack until strategic_solver is ported to new tactic framework
     bool				m_sms;
     int					m_sms_subsearch;
-    bool				m_sms_subsearch_abort;
     bool				m_bmc;
     front_end_params():
         m_param_vector(alloc(param_vector, this)),
@@ -120,7 +119,6 @@ struct front_end_params : public preprocessor_params, public spc_params, public 
         m_nlsat(false),
         m_sms(true),
         m_sms_subsearch(0),
-        m_sms_subsearch_abort(false),
         m_bmc(false){
     }
 

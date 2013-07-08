@@ -30,14 +30,13 @@ namespace smt {
           child_ctx(NULL),
          initial_propagation(true),
          popto(-1),
-     	 m_subsearch(FORCE_SUBSEARCH),
-     	 m_subsearch_abort_early(false)
+     	 m_subsearch(FORCE_SUBSEARCH)
     {
     	init(parent);
     	parent_just= new sat_justification(this);
     	m_sms = get_manager().mk_const_decl(symbol("@"),get_manager().mk_bool_sort());
     	m_subsearch = static_cast<saerchtype>( get_context().get_fparams().m_sms_subsearch);
-    	m_subsearch_abort_early= get_context().get_fparams().m_sms_subsearch_abort;
+
     //	std::cout<<"Subsearch type = " << m_subsearch << " " << ", early abort = " << m_subsearch_abort_early << "\n";
     	get_manager().inc_ref(m_sms);
     }
@@ -47,11 +46,12 @@ namespace smt {
            child_ctx(NULL),
            initial_propagation(true),
            popto(-1),
-       	  m_subsearch(FORCE_SUBSEARCH),
-       	  m_subsearch_abort_early(false)
+       	  m_subsearch(FORCE_SUBSEARCH)
+
        {
        	init(parent);
        	parent_just= new sat_justification(this);
+    	m_subsearch = static_cast<saerchtype>( get_context().get_fparams().m_sms_subsearch);
        	m_sms = get_manager().mk_const_decl(symbol("@"),get_manager().mk_bool_sort());
                    get_manager().inc_ref(m_sms);
        }
@@ -574,16 +574,6 @@ namespace smt {
     			 int tminlev =  std::max((int)get_context().get_search_level(),minlev);
     			 if(get_context().get_scope_level()>tminlev){
 					get_context().pop_scope(get_context().get_scope_level()-tminlev);
-    				 if (m_subsearch_abort_early){
-    					 res= l_false;
-    					 break;//give up search
-    				 }
-    			 }
-    			 //give up after a single solve attempt.
-    			 if(m_subsearch == SINGLE_SUBSEARCH){
-    				 if(res!=l_true)
-    					 res = l_false;
-    				 break;
     			 }
     		}
 
