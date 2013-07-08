@@ -20,7 +20,6 @@ Revision History:
 #define _theory_sat_H_
 
 #include"smt_theory.h"
-#include"theory_sat_params.h"
 #include"trail.h"
 #include"union_find.h"
 #include"simplifier.h"
